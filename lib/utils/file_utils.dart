@@ -9,6 +9,8 @@ enum FileType {
   audio,
   video,
   pdf,
+  word,
+  excel,
   document,
   mindMap,
   unknown,
@@ -38,7 +40,7 @@ class FileUtils {
   }
 
   static String getFileName(FileSystemEntity entity) {
-    return entity.path.split('/').last;
+    return entity.path.split(Platform.pathSeparator).last;
   }
 
   static Future<int> getFileSize(File file) async {
@@ -73,6 +75,10 @@ class FileUtils {
         return FileType.pdf;
       case 'doc':
       case 'docx':
+        return FileType.word;
+      case 'xls':
+      case 'xlsx':
+        return FileType.excel;
       case 'txt':
         return FileType.document;
       case 'xmind':

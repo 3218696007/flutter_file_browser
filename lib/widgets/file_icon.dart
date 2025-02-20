@@ -28,12 +28,15 @@ class FileIconWidget extends StatelessWidget {
         Icon(Icons.description, size: size, color: primaryColor),
       FileType.image => Image.file(entity as File, width: size, height: size),
       FileType.mindMap => Icon(Icons.map, size: size, color: primaryColor),
-      FileType.pdf =>
-        Icon(Icons.picture_as_pdf, size: size, color: primaryColor),
+      FileType.pdf => Icon(Icons.picture_as_pdf, size: size, color: Colors.red),
       FileType.video =>
         Icon(Icons.video_library, size: size, color: primaryColor),
       FileType.unknown =>
         Icon(Icons.insert_drive_file, size: size, color: primaryColor),
+      FileType.word =>
+        Icon(Icons.insert_drive_file, size: size, color: Colors.blue),
+      FileType.excel =>
+        Icon(Icons.insert_drive_file, size: size, color: Colors.teal),
     };
   }
 }

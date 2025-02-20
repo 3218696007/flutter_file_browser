@@ -5,15 +5,9 @@ class PathNode {
 
   PathNode(this.path);
 
-  void setChild(PathNode node) {
-    child = node;
-    node.parent = this;
-  }
-
-  void clearChild() {
-    if (child != null) {
-      child!.parent = null;
-      child = null;
-    }
+  void setChild(PathNode newChild) {
+    child?.parent = null;
+    newChild.parent = this;
+    child = newChild;
   }
 }
