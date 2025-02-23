@@ -7,14 +7,14 @@ import '../utils/file_opener.dart';
 import '../utils/file_utils.dart';
 import 'file_icon.dart';
 
-class Filemanager extends StatefulWidget {
-  const Filemanager({super.key});
+class FileBrowser extends StatefulWidget {
+  const FileBrowser({super.key});
 
   @override
-  State<Filemanager> createState() => _FilemanagerState();
+  State<FileBrowser> createState() => _FileBrowserState();
 }
 
-class _FilemanagerState extends State<Filemanager> {
+class _FileBrowserState extends State<FileBrowser> {
   List<FileSystemEntity> _currentFiles = [];
   bool isLoading = true;
   bool isGridView = false;
@@ -182,17 +182,60 @@ class _FilemanagerState extends State<Filemanager> {
                 icon: const Icon(Icons.arrow_upward),
                 onPressed: canGoUp ? _goUp : null,
               ),
-              Expanded(
-                child: TextField(
-                  controller: TextEditingController(text: _currentNode.path),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                  ),
-                  onSubmitted: (value) => _openNewDirectory(value),
-                ),
-              ),
             ],
+          ),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(48),
+            child: SizedBox(
+              height: 48,
+              child: Row(
+                children: [
+                  const SizedBox(width: 16),
+                  const Icon(Icons.folder_outlined),
+                  Expanded(
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: _buildBreadcrumbs(),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return AlertDialog(
+                            title: const Text('跳转到'),
+                            content: TextField(
+                              autofocus: true,
+                              controller: TextEditingController(
+                                text: _currentNode.path,
+                              ),
+                              onSubmitted: (value) {
+                                final directory = Directory(value);
+                                if (directory.existsSync()) {
+                                  _openNewDirectory(value);
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('目录不存在'),
+                                    ),
+                                  );
+                                }
+                                Navigator.pop(context);
+                              },
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                ],
+              ),
+            ),
           ),
           actions: [
             PopupMenuButton<String>(
@@ -623,5 +666,30 @@ class _FilemanagerState extends State<Filemanager> {
       await Directory(newPath).create();
       _loadCurrentFiles();
     }
+  }
+
+  List<Widget> _buildBreadcrumbs() {
+    final List<Widget> widgets = [];
+    final parts = _currentNode.path.split(Platform.pathSeparator);
+    String currentPath = '';
+
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (part.isEmpty) continue;
+      currentPath = Platform.isWindows
+          ? '$currentPath$part${Platform.pathSeparator}'
+          : '$currentPath$part/';
+      widgets.add(_buildBreadcrumbItem(parts[i], currentPath));
+      widgets.add(const Icon(Icons.chevron_right, size: 20));
+    }
+
+    return widgets;
+  }
+
+  Widget _buildBreadcrumbItem(String label, String path) {
+    return TextButton(
+      onPressed: () => _openNewDirectory(path),
+      child: Text(label, style: const TextStyle(color: Colors.black)),
+    );
   }
 }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'widgets/file_manager.dart';
+import 'widgets/file_browser.dart';
 
 void main() {
   runApp(const MyApp());
@@ -17,21 +17,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const FileManagerHome(),
+      home: const FileBrowser(),
     );
-  }
-}
-
-class FileManagerHome extends StatefulWidget {
-  const FileManagerHome({super.key});
-
-  @override
-  State<FileManagerHome> createState() => _FileManagerHomeState();
-}
-
-class _FileManagerHomeState extends State<FileManagerHome> {
-  @override
-  Widget build(BuildContext context) {
-    return const Filemanager();
   }
 }
