@@ -6,6 +6,7 @@ import '../models/path_node.dart';
 
 class FileBrowserController with ChangeNotifier {
   List<FileSystemEntity> currentFiles = [];
+  final selectedItems = <FileSystemEntity>[];
   String sortBy = 'name';
   String? errorMessage;
   bool isLoading = true;
@@ -170,5 +171,14 @@ class FileBrowserController with ChangeNotifier {
     } on Exception catch (e) {
       return '创建失败: $e';
     }
+  }
+
+  void switchItem(FileSystemEntity entity) {
+    if (selectedItems.contains(entity)) {
+      selectedItems.remove(entity);
+    } else {
+      selectedItems.add(entity);
+    }
+    notifyListeners();
   }
 }

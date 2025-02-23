@@ -170,6 +170,7 @@ class _FileBrowserState extends State<FileBrowser> {
                 IconButton(
                   icon: const Icon(Icons.refresh),
                   onPressed: _controller.loadCurrentFiles,
+                  // onPressed: _controller.loadCurrentFiles,
                 ),
               ],
             ),
@@ -294,39 +295,70 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   Widget _buildGridItem(BuildContext context, FileSystemEntity entity) {
-    return InkWell(
-      onTapDown: _storePosition,
-      onTap: () => _onOpenItem(entity),
-      onLongPress: () => _showFileOperationMenu(context, entity),
-      onSecondaryTapDown: _storePosition,
-      onSecondaryTap: () => _showFileOperationMenu(context, entity),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          FileIconWidget(entity: entity, size: 0.5 * _itemSize),
-          Text(
-            FileUtils.getFileName(entity),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12),
-          ),
-        ],
+    return Ink(
+      color: _controller.selectedItems.contains(entity)
+          ? Colors.blueGrey[200]
+          : null,
+      child: InkWell(
+        onTapDown: _storePosition,
+        onTap: () => _onTapItem(entity),
+        onLongPress: () => _onLongTapItem(entity),
+        onSecondaryTapDown: _storePosition,
+        onSecondaryTap: () => _showFileOperationMenu(context, entity),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            FileIconWidget(entity: entity, size: 0.5 * _itemSize),
+            Text(
+              FileUtils.getFileName(entity),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  DateTime _lastTapTime = DateTime(0);
+  int _lastTapIndex = -1;
+
+  void _onTapItem(FileSystemEntity entity) {
+    if (Platform.isAndroid) {
+      _openItem(entity);
+      return;
+    }
+    const doubleTapDelay = Duration(milliseconds: 300);
+    final now = DateTime.now();
+    final index = _controller.currentFiles.indexOf(entity);
+    if (now.difference(_lastTapTime) < doubleTapDelay &&
+        index == _lastTapIndex) {
+      _openItem(entity);
+    } else {
+      _controller.switchItem(entity);
+      _lastTapTime = now;
+      _lastTapIndex = index;
+    }
+  }
+
   Widget _buildListItem(BuildContext context, FileSystemEntity entity) {
-    return GestureDetector(
-      onTapDown: _storePosition,
-      onSecondaryTapDown: _storePosition,
-      onSecondaryTap: () => _showFileOperationMenu(context, entity),
-      child: ListTile(
-        minTileHeight: 0.4 * _itemSize,
-        leading: FileIconWidget(entity: entity, size: 0.3 * _itemSize),
-        title: Text(FileUtils.getFileName(entity)),
-        onTap: () => _onOpenItem(entity),
-        onLongPress: () => _showFileOperationMenu(context, entity),
+    return Ink(
+      color: _controller.selectedItems.contains(entity)
+          ? Colors.blueGrey[200]
+          : null,
+      child: InkWell(
+        onTap: () => _onTapItem(entity),
+        onTapDown: _storePosition,
+        onLongPress: () => _onLongTapItem(entity),
+        onSecondaryTapDown: _storePosition,
+        onSecondaryTap: () => _showFileOperationMenu(context, entity),
+        child: ListTile(
+          minTileHeight: 0.4 * _itemSize,
+          leading: FileIconWidget(entity: entity, size: 0.3 * _itemSize),
+          title: Text(FileUtils.getFileName(entity)),
+        ),
       ),
     );
   }
@@ -422,7 +454,7 @@ class _FileBrowserState extends State<FileBrowser> {
 
     switch (result) {
       case 'open':
-        _onOpenItem(entity);
+        _openItem(entity);
         break;
       case 'rename':
         final newName = await showDialog<String>(
@@ -545,7 +577,7 @@ class _FileBrowserState extends State<FileBrowser> {
     );
   }
 
-  void _onOpenItem(FileSystemEntity entity) {
+  void _openItem(FileSystemEntity entity) {
     if (entity is Directory) {
       _controller.openNewDirectory(entity.path);
     } else {
@@ -559,5 +591,10 @@ class _FileBrowserState extends State<FileBrowser> {
         }
       });
     }
+  }
+
+  _onLongTapItem(FileSystemEntity entity) {
+    _showFileOperationMenu(context, entity);
+    _controller.switchItem(entity);
   }
 }
