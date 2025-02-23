@@ -9,6 +9,7 @@ environment:
   sdk: '>=3.4.0 <4.0.0'
 
 dependencies:
+  fc_native_video_thumbnail: ^0.17.2
   flutter:
     sdk: flutter
 

@@ -4,16 +4,16 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 
 class FileOpener {
-  static Future<void> openFile(BuildContext context, String filePath) async {
+  static Future<String?> openFile(String filePath) async {
     try {
       if (Platform.isWindows) {
         await Process.start('explorer', [filePath]);
       } else if (Platform.isAndroid) {
-
         final mimeType = _getMimeType(filePath);
 
-        final intent = await const MethodChannel('com.qshh.file_brower/file_opener')
-            .invokeMethod(
+        final intent =
+            await const MethodChannel('com.qshh.file_brower/file_opener')
+                .invokeMethod(
           'openFile',
           {
             'filePath': filePath,
@@ -22,21 +22,16 @@ class FileOpener {
         );
 
         if (intent == false) {
-          throw '没有找到可以打开此类型文件的应用';
+          return '没有找到可以打开此类型文件的应用';
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('在你的系统中打开文件功能待开发')),
-        );
+        return '在你的系统中打开文件功能待开发';
       }
     } catch (e) {
       debugPrint('无法打开文件：$e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法打开文件：$e')),
-        );
-      }
+      return '无法打开文件：$e';
     }
+    return null;
   }
 
   static String _getMimeType(String filePath) {

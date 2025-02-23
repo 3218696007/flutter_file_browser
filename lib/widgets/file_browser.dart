@@ -1,48 +1,23 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
-import '../models/path_node.dart';
+import '../controllers/file_browser_controller.dart';
 import '../utils/file_opener.dart';
 import '../utils/file_utils.dart';
 import 'file_icon.dart';
 
 class FileBrowser extends StatefulWidget {
-  const FileBrowser({super.key});
+  const FileBrowser({super.key, this.initialPath});
+
+  final String? initialPath;
 
   @override
   State<FileBrowser> createState() => _FileBrowserState();
 }
 
 class _FileBrowserState extends State<FileBrowser> {
-  List<FileSystemEntity> _currentFiles = [];
-  bool isLoading = true;
-  bool isGridView = false;
-  String sortBy = 'name';
-  String? errorMessage;
+  final _controller = FileBrowserController();
+  bool _isGridView = false;
   final double _itemSize = 120;
-  late PathNode _currentNode;
-
-  Future<String> _getRootPath() async {
-    if (Platform.isAndroid) {
-      final directory = await getExternalStorageDirectory();
-      return directory?.path.split('Android')[0] ?? '/';
-    } else if (Platform.isWindows) {
-      return 'C:\\';
-    } else {
-      return '/';
-    }
-  }
-
-  bool get canGoUp {
-    final parentDirectory = Directory(_currentNode.path).parent;
-    return parentDirectory.existsSync() &&
-        parentDirectory.path != _currentNode.path;
-  }
-
-  bool get _canGoBack => _currentNode.parent != null;
-
-  bool get canGoForward => _currentNode.child != null;
 
   Offset _tapPosition = Offset.zero;
 
@@ -50,240 +25,223 @@ class _FileBrowserState extends State<FileBrowser> {
     _tapPosition = details.globalPosition;
   }
 
-  Future<void> _requestStoragePermission() async {
-    if (Platform.isAndroid) {
-      final status = await Permission.manageExternalStorage.status;
-      if (!status.isGranted) {
-        await Permission.manageExternalStorage.request();
-      }
-    }
-  }
-
   @override
   void initState() {
-    _requestStoragePermission().then((_) {
-      _getRootPath().then((rootPath) {
-        _currentNode = PathNode(rootPath);
-        _loadCurrentFiles();
-      });
-    });
+    _controller.initialize(widget.initialPath);
     super.initState();
   }
 
-  Future<void> _loadCurrentFiles() async {
-    setState(() {
-      isLoading = true;
-    });
-    try {
-      final directory = Directory(_currentNode.path);
-      final entities = await directory.list().toList();
-      setState(() {
-        _currentFiles = _sortFiles(entities);
-        isLoading = false;
-        errorMessage = null;
-      });
-    } catch (e) {
-      debugPrint('无法访问该目录: $e');
-      setState(() {
-        isLoading = false;
-        errorMessage = '无法访问该目录，可能是因为权限不足。\n请尝试访问其他目录或检查应用权限设置。';
-      });
-    }
-  }
-
-  void _handleFileTap(BuildContext context, FileSystemEntity entity) {
-    if (entity is Directory) {
-      _openNewDirectory(entity.path);
-      _loadCurrentFiles();
-    } else {
-      FileOpener.openFile(context, entity.path);
-    }
-  }
-
-  List<FileSystemEntity> _sortFiles(List<FileSystemEntity> files) {
-    switch (sortBy) {
-      case 'name':
-        return files
-          ..sort(
-              (a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
-      case 'date':
-        return files
-          ..sort(
-              (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
-      case 'size':
-        return files
-          ..sort((a, b) {
-            if (a is Directory && b is File) return -1;
-            if (a is File && b is Directory) return 1;
-            if (a is File && b is File) {
-              return b.lengthSync().compareTo(a.lengthSync());
-            }
-            return 0;
-          });
-      default:
-        return files;
-    }
-  }
-
-  void changeSortMethod(String method) {
-    setState(() {
-      sortBy = method;
-      _currentFiles = _sortFiles(_currentFiles);
-    });
-  }
-
-  void toggleViewType() {
-    setState(() {
-      isGridView = !isGridView;
-    });
-  }
-
-  DateTime _lastPopTime = DateTime(0);
-
   _onPopInvoked(_) {
-    if (_canGoBack) {
-      _goBack();
-      return;
+    if (_controller.cantPopOrBack()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('再按一次返回键退出应用'),
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
-    final now = DateTime.now();
-    if (now.difference(_lastPopTime) <= const Duration(seconds: 2)) exit(0);
-    _lastPopTime = now;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('再按一次返回键退出应用'),
-        duration: Duration(seconds: 2),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
-      return const Material(child: Center(child: CircularProgressIndicator()));
-    }
-    return PopScope(
-      canPop: false,
-      onPopInvoked: _onPopInvoked,
-      child: Scaffold(
-        appBar: AppBar(
-          leadingWidth: 0,
-          leading: const SizedBox(),
-          title: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: _canGoBack ? _goBack : null,
-              ),
-              IconButton(
-                icon: const Icon(Icons.arrow_forward),
-                onPressed: canGoForward ? _goForward : null,
-              ),
-              IconButton(
-                icon: const Icon(Icons.arrow_upward),
-                onPressed: canGoUp ? _goUp : null,
-              ),
-            ],
-          ),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(48),
-            child: SizedBox(
-              height: 48,
-              child: Row(
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (_, __) {
+        if (_controller.isLoading) {
+          return const Material(
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return PopScope(
+          canPop: false,
+          onPopInvoked: _onPopInvoked,
+          child: Scaffold(
+            appBar: AppBar(
+              leadingWidth: 0,
+              leading: const SizedBox(),
+              title: Row(
                 children: [
-                  const SizedBox(width: 16),
-                  const Icon(Icons.folder_outlined),
-                  Expanded(
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: _buildBreadcrumbs(),
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed:
+                        _controller.canGoBack ? _controller.goBack : null,
                   ),
                   IconButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (BuildContext context) {
-                          return AlertDialog(
-                            title: const Text('跳转到'),
-                            content: TextField(
-                              autofocus: true,
-                              controller: TextEditingController(
-                                text: _currentNode.path,
-                              ),
-                              onSubmitted: (value) {
-                                final directory = Directory(value);
-                                if (directory.existsSync()) {
-                                  _openNewDirectory(value);
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('目录不存在'),
-                                    ),
-                                  );
-                                }
-                                Navigator.pop(context);
-                              },
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                    icon: const Icon(Icons.edit_outlined),
+                    icon: const Icon(Icons.arrow_forward),
+                    onPressed:
+                        _controller.canGoForward ? _controller.goForward : null,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_upward),
+                    onPressed: _controller.canGoUp ? _controller.goUp : null,
                   ),
                 ],
               ),
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(48),
+                child: SizedBox(
+                  height: 48,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 16),
+                      const Icon(Icons.folder_outlined),
+                      Expanded(
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _buildBreadcrumbs(),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (BuildContext context) {
+                              final controller = TextEditingController(
+                                text: _controller.currentNode.path,
+                              );
+                              // 自动全选路径
+                              controller.selection = TextSelection(
+                                baseOffset: 0,
+                                extentOffset: controller.text.length,
+                              );
+                              return AlertDialog(
+                                title: const Text('跳转到'),
+                                content: TextField(
+                                  autofocus: true,
+                                  controller: controller,
+                                  onSubmitted: (value) {
+                                    final directory = Directory(value);
+                                    if (directory.existsSync()) {
+                                      _controller.openNewDirectory(value);
+                                    } else {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text('目录不存在'),
+                                        ),
+                                      );
+                                    }
+                                    Navigator.pop(context);
+                                  },
+                                  decoration: const InputDecoration(
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                PopupMenuButton<String>(
+                  tooltip: '排序',
+                  icon: const Icon(Icons.sort_by_alpha),
+                  onSelected: _controller.changeSortMethod,
+                  itemBuilder: (BuildContext context) {
+                    return <PopupMenuEntry<String>>[
+                      const PopupMenuItem<String>(
+                        value: 'name',
+                        child: Text('名称'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'date',
+                        child: Text('日期'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'size',
+                        child: Text('大小'),
+                      ),
+                    ];
+                  },
+                ),
+                IconButton(
+                  icon: Icon(_isGridView ? Icons.list : Icons.grid_view),
+                  onPressed: () {
+                    setState(() {
+                      _isGridView = !_isGridView;
+                    });
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _controller.loadCurrentFiles,
+                ),
+              ],
+            ),
+            body: Listener(
+              onPointerDown: (event) {
+                if (event.buttons == 8 && _controller.canGoBack) {
+                  _controller.goBack();
+                }
+                if (event.buttons == 16 && _controller.canGoForward) {
+                  _controller.goForward();
+                }
+              },
+              child: _filesBuilder(),
+            ),
+            floatingActionButton: FloatingActionButton(
+              onPressed: () {
+                showDialog<String>(
+                  context: context,
+                  builder: (BuildContext context) {
+                    final name = ValueNotifier('');
+                    return AlertDialog(
+                      title: const Text('创建新文件夹'),
+                      content: TextField(
+                        autofocus: true,
+                        onChanged: (value) => name.value = value,
+                        decoration: const InputDecoration(
+                          hintText: '请输入文件夹名称',
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('取消'),
+                        ),
+                        ValueListenableBuilder(
+                          valueListenable: name,
+                          builder: (_, value, __) {
+                            return TextButton(
+                              onPressed: value.isEmpty
+                                  ? null
+                                  : () {
+                                      Navigator.pop(context);
+                                      _controller
+                                          .createDirectory(value)
+                                          .then((message) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(message),
+                                          ),
+                                        );
+                                      });
+                                    },
+                              child: const Text('确定'),
+                            );
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+              child: const Icon(Icons.create_new_folder),
             ),
           ),
-          actions: [
-            PopupMenuButton<String>(
-              onSelected: changeSortMethod,
-              itemBuilder: (BuildContext context) {
-                return <PopupMenuEntry<String>>[
-                  const PopupMenuItem<String>(
-                    value: 'name',
-                    child: Text('名称'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'date',
-                    child: Text('日期'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'size',
-                    child: Text('大小'),
-                  ),
-                ];
-              },
-            ),
-            IconButton(
-              icon: Icon(isGridView ? Icons.list : Icons.grid_view),
-              onPressed: toggleViewType,
-            ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadCurrentFiles,
-            ),
-          ],
-        ),
-        body: Listener(
-          onPointerDown: (event) {
-            if (event.buttons == 8 && _canGoBack) _goBack();
-            if (event.buttons == 16 && canGoForward) _goForward();
-          },
-          child: _filesBuilder(),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: _createDirectory,
-          child: const Icon(Icons.create_new_folder),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Widget _filesBuilder() {
-    if (errorMessage != null) {
+    if (_controller.errorMessage != null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -295,21 +253,22 @@ class _FileBrowserState extends State<FileBrowser> {
             ),
             const SizedBox(height: 16),
             Text(
-              errorMessage!,
+              _controller.errorMessage!,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _loadCurrentFiles,
+              onPressed: _controller.loadCurrentFiles,
               child: const Text('重试'),
             ),
           ],
         ),
       );
     }
-    return isGridView
+    return _isGridView
         ? GridView.builder(
+            key: PageStorageKey(_controller.currentNode),
             padding: const EdgeInsets.all(8),
             gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: _itemSize,
@@ -318,16 +277,17 @@ class _FileBrowserState extends State<FileBrowser> {
               crossAxisSpacing: 2,
               mainAxisSpacing: 2,
             ),
-            itemCount: _currentFiles.length,
+            itemCount: _controller.currentFiles.length,
             itemBuilder: (context, index) {
-              final entity = _currentFiles[index];
+              final entity = _controller.currentFiles[index];
               return _buildGridItem(context, entity);
             },
           )
         : ListView.builder(
-            itemCount: _currentFiles.length,
+            key: PageStorageKey(_controller.currentNode),
+            itemCount: _controller.currentFiles.length,
             itemBuilder: (context, index) {
-              final entity = _currentFiles[index];
+              final entity = _controller.currentFiles[index];
               return _buildListItem(context, entity);
             },
           );
@@ -336,7 +296,7 @@ class _FileBrowserState extends State<FileBrowser> {
   Widget _buildGridItem(BuildContext context, FileSystemEntity entity) {
     return InkWell(
       onTapDown: _storePosition,
-      onTap: () => _handleFileTap(context, entity),
+      onTap: () => _onOpenItem(entity),
       onLongPress: () => _showFileOperationMenu(context, entity),
       onSecondaryTapDown: _storePosition,
       onSecondaryTap: () => _showFileOperationMenu(context, entity),
@@ -365,74 +325,10 @@ class _FileBrowserState extends State<FileBrowser> {
         minTileHeight: 0.4 * _itemSize,
         leading: FileIconWidget(entity: entity, size: 0.3 * _itemSize),
         title: Text(FileUtils.getFileName(entity)),
-        onTap: () => _handleFileTap(context, entity),
+        onTap: () => _onOpenItem(entity),
         onLongPress: () => _showFileOperationMenu(context, entity),
       ),
     );
-  }
-
-  void _openNewDirectory(String path) {
-    _currentNode.setChild(PathNode(path));
-    _goForward();
-  }
-
-  void _goBack() {
-    _currentNode = _currentNode.parent!;
-    _loadCurrentFiles();
-  }
-
-  void _goForward() {
-    _currentNode = _currentNode.child!;
-    _loadCurrentFiles();
-  }
-
-  void _goUp() => _openNewDirectory(Directory(_currentNode.path).parent.path);
-
-  Future<void> renameFile(FileSystemEntity entity, String newName) async {
-    try {
-      final path = entity.path;
-      final directory = Directory(path).parent;
-      final newPath = '${directory.path}${Platform.pathSeparator}$newName';
-      await entity.rename(newPath);
-      _loadCurrentFiles();
-    } catch (e) {
-      throw '重命名失败: $e';
-    }
-  }
-
-  Future<void> deleteFile(FileSystemEntity entity) async {
-    try {
-      if (entity is Directory) {
-        await entity.delete(recursive: true);
-      } else {
-        await entity.delete();
-      }
-      _loadCurrentFiles();
-    } catch (e) {
-      throw '删除失败: $e';
-    }
-  }
-
-  Future<Map<String, dynamic>> getFileProperties(
-      FileSystemEntity entity) async {
-    try {
-      final stat = await entity.stat();
-      final properties = <String, dynamic>{
-        '名称': entity.path.split(Platform.pathSeparator).last,
-        '路径': entity.path,
-        '修改时间': stat.modified.toString(),
-        '访问时间': stat.accessed.toString(),
-        '创建时间': stat.changed.toString(),
-      };
-
-      if (entity is File) {
-        properties['大小'] = '${(await entity.length()) ~/ 1024} KB';
-      }
-
-      return properties;
-    } catch (e) {
-      throw '获取属性失败: $e';
-    }
   }
 
   Future<void> _showFileOperationMenu(
@@ -526,7 +422,7 @@ class _FileBrowserState extends State<FileBrowser> {
 
     switch (result) {
       case 'open':
-        _handleFileTap(context, entity);
+        _onOpenItem(entity);
         break;
       case 'rename':
         final newName = await showDialog<String>(
@@ -557,21 +453,16 @@ class _FileBrowserState extends State<FileBrowser> {
           },
         );
 
-        if (newName != null && newName.isNotEmpty && context.mounted) {
-          try {
-            await renameFile(entity, newName);
-            _loadCurrentFiles();
-          } catch (e) {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(e.toString())),
-              );
-            }
-          }
-        }
+        _controller.renameFile(entity, newName).then((message) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+            ),
+          );
+        });
         break;
       case 'delete':
-        final confirm = await showDialog<bool>(
+        showDialog<bool>(
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
@@ -579,11 +470,20 @@ class _FileBrowserState extends State<FileBrowser> {
               content: Text('确定要删除 ${FileUtils.getFileName(entity)} 吗？'),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context, false),
+                  onPressed: () => Navigator.pop(context),
                   child: const Text('取消'),
                 ),
                 TextButton(
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: () {
+                    _controller.deleteFile(entity).then((message) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(message),
+                        ),
+                      );
+                    });
+                    Navigator.pop(context);
+                  },
                   child: const Text(
                     '删除',
                     style: TextStyle(color: Colors.red),
@@ -593,84 +493,36 @@ class _FileBrowserState extends State<FileBrowser> {
             );
           },
         );
-
-        if (confirm == true && context.mounted) {
-          try {
-            await deleteFile(entity);
-            _loadCurrentFiles();
-          } catch (e) {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(e.toString())),
-              );
-            }
-          }
-        }
         break;
       case 'properties':
-        final properties = await getFileProperties(entity);
-        if (context.mounted) {
-          showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: Text(FileUtils.getFileName(entity)),
-                content: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: properties.entries.map((entry) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Text('${entry.key}: ${entry.value}'),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              );
-            },
-          );
-        }
-        break;
-    }
-  }
+        final properties = _controller.getFileProperties(entity);
 
-  void _createDirectory() async {
-    String? folderName = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) {
-        String newFolderName = '';
-        return AlertDialog(
-          title: const Text('创建新文件夹'),
-          content: TextField(
-            autofocus: true,
-            onChanged: (value) => newFolderName = value,
-            decoration: const InputDecoration(
-              hintText: '请输入文件夹名称',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, newFolderName),
-              child: const Text('确定'),
-            ),
-          ],
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text(FileUtils.getFileName(entity)),
+              content: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: properties.entries.map((entry) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text('${entry.key}: ${entry.value}'),
+                    );
+                  }).toList(),
+                ),
+              ),
+            );
+          },
         );
-      },
-    );
-    if (folderName != null && folderName.isNotEmpty) {
-      final newPath = '${_currentNode.path}/$folderName';
-      await Directory(newPath).create();
-      _loadCurrentFiles();
+        break;
     }
   }
 
   List<Widget> _buildBreadcrumbs() {
     final List<Widget> widgets = [];
-    final parts = _currentNode.path.split(Platform.pathSeparator);
+    final parts = _controller.currentNode.path.split(Platform.pathSeparator);
     String currentPath = '';
 
     for (var i = 0; i < parts.length; i++) {
@@ -688,8 +540,24 @@ class _FileBrowserState extends State<FileBrowser> {
 
   Widget _buildBreadcrumbItem(String label, String path) {
     return TextButton(
-      onPressed: () => _openNewDirectory(path),
+      onPressed: () => _controller.openNewDirectory(path),
       child: Text(label, style: const TextStyle(color: Colors.black)),
     );
+  }
+
+  void _onOpenItem(FileSystemEntity entity) {
+    if (entity is Directory) {
+      _controller.openNewDirectory(entity.path);
+    } else {
+      FileOpener.openFile(entity.path).then((error) {
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error),
+            ),
+          );
+        }
+      });
+    }
   }
 }

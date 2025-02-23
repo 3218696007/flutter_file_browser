@@ -1,138 +1,174 @@
-// import 'dart:io';
-// import 'package:flutter/material.dart';
-// import '../models/path_node.dart';
-// import '../utils/file_utils.dart';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
-// class FileBrowserController extends ChangeNotifier {
-//   late PathNode _currentNode;
-//   List<FileSystemEntity> _files = [];
-//   String? _errorMessage;
-//   bool _isGridView = false;
-//   Offset _tapPosition = Offset.zero;
-//   double _itemSize = 100.0;
+import '../models/path_node.dart';
 
-//   FileBrowserController(String initialPath) {
-//     _currentNode = PathNode(initialPath);
-//     loadCurrentFiles();
-//   }
+class FileBrowserController with ChangeNotifier {
+  List<FileSystemEntity> currentFiles = [];
+  String sortBy = 'name';
+  String? errorMessage;
+  bool isLoading = true;
+  late PathNode currentNode;
 
-//   // Getters
-//   PathNode get currentNode => _currentNode;
-//   List<FileSystemEntity> get files => _files;
-//   String? get errorMessage => _errorMessage;
-//   bool get isGridView => _isGridView;
-//   double get itemSize => _itemSize;
-//   bool get canGoBack => _currentNode.parent != null;
-//   bool get canGoForward => _currentNode.child != null;
-//   String get currentPath => _currentNode.path;
+  Future<void> initialize(String? initialPath) async {
+    currentNode = PathNode(initialPath ?? await getRootPath());
+    loadCurrentFiles();
+  }
 
-//   void storePosition(TapDownDetails details) {
-//     _tapPosition = details.globalPosition;
-//   }
+  Future<String> getRootPath() async {
+    if (Platform.isAndroid) {
+      final directory = await getExternalStorageDirectory();
+      return directory?.path.split('Android')[0] ?? '/';
+    } else if (Platform.isWindows) {
+      return 'C:\\';
+    } else {
+      return '/';
+    }
+  }
 
-//   Offset get tapPosition => _tapPosition;
+  bool get canGoUp {
+    final parentDirectory = Directory(currentNode.path).parent;
+    return parentDirectory.existsSync() &&
+        parentDirectory.path != currentNode.path;
+  }
 
-//   void toggleViewType() {
-//     _isGridView = !_isGridView;
-//     notifyListeners();
-//   }
+  bool get canGoBack => currentNode.parent != null;
 
-//   Future<void> loadCurrentFiles() async {
-//     try {
-//       _errorMessage = null;
-//       final directory = Directory(_currentNode.path);
-//       if (!await directory.exists()) {
-//         throw '目录不存在';
-//       }
+  bool get canGoForward => currentNode.child != null;
 
-//       _files = await directory.list().toList();
-//       _files.sort((a, b) {
-//         if (a is Directory && b is! Directory) return -1;
-//         if (a is! Directory && b is Directory) return 1;
-//         return a.path.toLowerCase().compareTo(b.path.toLowerCase());
-//       });
-//       notifyListeners();
-//     } catch (e) {
-//       _errorMessage = e.toString();
-//       notifyListeners();
-//     }
-//   }
+  Future<void> loadCurrentFiles() async {
+    isLoading = true;
+    notifyListeners();
+    try {
+      final directory = Directory(currentNode.path);
+      currentFiles = _sortFiles(await directory.list().toList());
+      errorMessage = null;
+    } catch (e) {
+      debugPrint('无法访问该目录: $e');
+      errorMessage = '无法访问该目录，可能是因为权限不足。\n请尝试访问其他目录或检查应用权限设置。';
+    }
+    isLoading = false;
+    notifyListeners();
+  }
 
-//   void openNewDirectory(String path) {
-//     _currentNode.setChild(PathNode(path));
-//     goForward();
-//   }
+  List<FileSystemEntity> _sortFiles(List<FileSystemEntity> files) {
+    switch (sortBy) {
+      case 'name':
+        return files
+          ..sort(
+              (a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
+      case 'date':
+        return files
+          ..sort(
+              (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      case 'size':
+        return files
+          ..sort((a, b) {
+            if (a is Directory && b is File) return -1;
+            if (a is File && b is Directory) return 1;
+            if (a is File && b is File) {
+              return b.lengthSync().compareTo(a.lengthSync());
+            }
+            return 0;
+          });
+      default:
+        return files;
+    }
+  }
 
-//   void goBack() {
-//     if (!canGoBack) return;
-//     _currentNode = _currentNode.parent!;
-//     loadCurrentFiles();
-//   }
+  void changeSortMethod(String method) {
+    sortBy = method;
+    currentFiles = _sortFiles(currentFiles);
+    notifyListeners();
+  }
 
-//   void goForward() {
-//     if (!canGoForward) return;
-//     _currentNode = _currentNode.child!;
-//     loadCurrentFiles();
-//   }
+  DateTime _lastPopTime = DateTime(0);
 
-//   void goUp() {
-//     openNewDirectory(Directory(_currentNode.path).parent.path);
-//   }
+  bool cantPopOrBack() {
+    if (canGoBack) {
+      goBack();
+      return false;
+    }
+    final now = DateTime.now();
+    if (now.difference(_lastPopTime) <= const Duration(seconds: 2)) exit(0);
+    _lastPopTime = now;
+    return true;
+  }
 
-//   Future<void> renameFile(FileSystemEntity entity, String newName) async {
-//     try {
-//       final path = entity.path;
-//       final directory = Directory(path).parent;
-//       final newPath = '${directory.path}${Platform.pathSeparator}$newName';
-//       await entity.rename(newPath);
-//       loadCurrentFiles();
-//     } catch (e) {
-//       throw '重命名失败: $e';
-//     }
-//   }
+  void openNewDirectory(String path) {
+    currentNode.setChild(PathNode(path));
+    goForward();
+  }
 
-//   Future<void> deleteFile(FileSystemEntity entity) async {
-//     try {
-//       if (entity is Directory) {
-//         await entity.delete(recursive: true);
-//       } else {
-//         await entity.delete();
-//       }
-//       loadCurrentFiles();
-//     } catch (e) {
-//       throw '删除失败: $e';
-//     }
-//   }
+  void goBack() {
+    currentNode = currentNode.parent!;
+    loadCurrentFiles();
+  }
 
-//   Future<Map<String, dynamic>> getFileProperties(FileSystemEntity entity) async {
-//     try {
-//       final stat = await entity.stat();
-//       final properties = <String, dynamic>{
-//         '名称': entity.path.split(Platform.pathSeparator).last,
-//         '路径': entity.path,
-//         '修改时间': stat.modified.toString(),
-//         '访问时间': stat.accessed.toString(),
-//         '创建时间': stat.changed.toString(),
-//       };
+  void goForward() {
+    currentNode = currentNode.child!;
+    loadCurrentFiles();
+  }
 
-//       if (entity is File) {
-//         properties['大小'] = '${(await entity.length()) ~/ 1024} KB';
-//       }
+  void goUp() => openNewDirectory(Directory(currentNode.path).parent.path);
 
-//       return properties;
-//     } catch (e) {
-//       throw '获取属性失败: $e';
-//     }
-//   }
+  Future<String> renameFile(FileSystemEntity entity, String? newName) async {
+    if (newName == null || newName.isEmpty) return '请输入新名称';
+    try {
+      final directory = Directory(entity.path).parent;
+      final newPath = '${directory.path}${Platform.pathSeparator}$newName';
+      await entity.rename(newPath);
+      loadCurrentFiles();
+      return '重命名成功';
+    } catch (e) {
+      return '重命名失败: $e';
+    }
+  }
 
-//   Future<void> createDirectory(String folderName) async {
-//     if (folderName.isEmpty) return;
-//     try {
-//       final newPath = '${_currentNode.path}${Platform.pathSeparator}$folderName';
-//       await Directory(newPath).create();
-//       loadCurrentFiles();
-//     } catch (e) {
-//       throw '创建文件夹失败: $e';
-//     }
-//   }
-// }
+  Future<String> deleteFile(FileSystemEntity entity) async {
+    try {
+      if (entity is Directory) {
+        await entity.delete(recursive: true);
+      } else {
+        await entity.delete();
+      }
+      loadCurrentFiles();
+      return '删除成功';
+    } catch (e) {
+      return '删除失败: $e';
+    }
+  }
+
+  Map<String, dynamic> getFileProperties(FileSystemEntity entity) {
+    try {
+      final stat = entity.statSync();
+      final properties = <String, dynamic>{
+        '名称': entity.path.split(Platform.pathSeparator).last,
+        '路径': entity.path,
+        '修改时间': stat.modified.toString(),
+        '访问时间': stat.accessed.toString(),
+        '创建时间': stat.changed.toString(),
+      };
+
+      if (entity is File) {
+        properties['大小'] = '${(entity.lengthSync()) ~/ 1024} KB';
+      }
+
+      return properties;
+    } catch (e) {
+      throw '获取属性失败: $e';
+    }
+  }
+
+  Future<String> createDirectory(String? folderName) async {
+    final newPath = '${currentNode.path}/$folderName';
+    try {
+      await Directory(newPath).create();
+      loadCurrentFiles();
+      return '创建成功';
+    } on Exception catch (e) {
+      return '创建失败: $e';
+    }
+  }
+}

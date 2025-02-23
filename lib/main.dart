@@ -1,8 +1,22 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'widgets/file_browser.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _requestStoragePermission();
   runApp(const MyApp());
+}
+
+Future<void> _requestStoragePermission() async {
+  if (Platform.isAndroid) {
+    final status = await Permission.manageExternalStorage.status;
+    if (!status.isGranted) {
+      await Permission.manageExternalStorage.request();
+    }
+  }
 }
 
 class MyApp extends StatelessWidget {
