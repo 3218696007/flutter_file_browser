@@ -1,4 +1,4 @@
-package com.example.file_manager
+package com.qshh.file_browser
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine

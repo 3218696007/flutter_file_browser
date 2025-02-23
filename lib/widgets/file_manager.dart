@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/path_node.dart';
 import '../utils/file_opener.dart';
 import '../utils/file_utils.dart';
@@ -49,11 +50,22 @@ class _FilemanagerState extends State<Filemanager> {
     _tapPosition = details.globalPosition;
   }
 
+  Future<void> _requestStoragePermission() async {
+    if (Platform.isAndroid) {
+      final status = await Permission.manageExternalStorage.status;
+      if (!status.isGranted) {
+        await Permission.manageExternalStorage.request();
+      }
+    }
+  }
+
   @override
   void initState() {
-    _getRootPath().then((rootPath) {
-      _currentNode = PathNode(rootPath);
-      _loadCurrentFiles();
+    _requestStoragePermission().then((_) {
+      _getRootPath().then((rootPath) {
+        _currentNode = PathNode(rootPath);
+        _loadCurrentFiles();
+      });
     });
     super.initState();
   }

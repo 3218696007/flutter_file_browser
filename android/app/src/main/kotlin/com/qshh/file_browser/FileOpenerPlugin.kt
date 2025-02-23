@@ -1,8 +1,7 @@
-package com.example.file_manager
+package com.qshh.file_browser
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.core.content.FileProvider
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
@@ -16,7 +15,7 @@ class FileOpenerPlugin : FlutterPlugin, MethodCallHandler {
     private lateinit var context: Context
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        channel = MethodChannel(binding.binaryMessenger, "com.example.fm/file_opener")
+        channel = MethodChannel(binding.binaryMessenger, "com.qshh.file_brower/file_opener")
         context = binding.applicationContext
         channel.setMethodCallHandler(this)
     }
@@ -41,21 +40,26 @@ class FileOpenerPlugin : FlutterPlugin, MethodCallHandler {
 
                     val uri = FileProvider.getUriForFile(
                         context,
-                        "com.example.fm.fileprovider",
+                        "com.qshh.file_brower.fileprovider",
                         file
                     )
 
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                    val viewIntent = Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(uri, mimeType)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
 
-                    if (intent.resolveActivity(context.packageManager) != null) {
-                        context.startActivity(intent)
+                    if (viewIntent.resolveActivity(context.packageManager) != null) {
+                        context.startActivity(viewIntent)
                         result.success(true)
                     } else {
-                        result.success(false)
+                        // 如果没有默认应用，使用ACTION_CHOOSER让用户选择应用
+                        val chooserIntent = Intent.createChooser(viewIntent, "选择打开方式").apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(chooserIntent)
+                        result.success(true)
                     }
                 } catch (e: Exception) {
                     result.error("OPEN_ERROR", e.toString(), null)

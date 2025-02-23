@@ -9,14 +9,10 @@ class FileOpener {
       if (Platform.isWindows) {
         await Process.start('explorer', [filePath]);
       } else if (Platform.isAndroid) {
-        final file = File(filePath);
-        if (!await file.exists()) {
-          throw '文件不存在';
-        }
 
         final mimeType = _getMimeType(filePath);
 
-        final intent = await const MethodChannel('com.example.fm/file_opener')
+        final intent = await const MethodChannel('com.qshh.file_brower/file_opener')
             .invokeMethod(
           'openFile',
           {
@@ -51,8 +47,9 @@ class FileOpener {
       case '.pdf':
         return 'application/pdf';
       case '.doc':
-      case '.docx':
         return 'application/msword';
+      case '.docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       case '.xls':
       case '.xlsx':
         return 'application/vnd.ms-excel';

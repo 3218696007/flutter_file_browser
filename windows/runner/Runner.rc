@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "file_manager" "\0"
+            VALUE "CompanyName", "com.qshh" "\0"
+            VALUE "FileDescription", "file_browser" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "file_manager" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "file_manager.exe" "\0"
-            VALUE "ProductName", "file_manager" "\0"
+            VALUE "InternalName", "file_browser" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2025 com.qshh. All rights reserved." "\0"
+            VALUE "OriginalFilename", "file_browser.exe" "\0"
+            VALUE "ProductName", "file_browser" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

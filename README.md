@@ -1,4 +1,4 @@
-# file_manager
+# file_browser
 
 A new Flutter project.
 
