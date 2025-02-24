@@ -3,7 +3,7 @@ import 'package:fc_native_video_thumbnail/fc_native_video_thumbnail.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
-import '../../utils/file_utils.dart';
+import '../../service/entity_utils.dart';
 
 class FileIcon extends StatelessWidget {
   final FileSystemEntity entity;
@@ -35,9 +35,9 @@ class FileIcon extends StatelessWidget {
     if (entity is Directory) {
       return Icon(Icons.folder, size: size, color: directoryColor);
     }
-    return switch (FileUtils.getFileType(entity.path)) {
-      FileType.audio => Icon(Icons.audiotrack, size: size, color: fileColor),
-      FileType.image => Image.file(
+    return switch (entity.type) {
+      EntityType.audio => Icon(Icons.audiotrack, size: size, color: fileColor),
+      EntityType.image => Image.file(
           entity as File,
           width: size,
           height: size,
@@ -45,7 +45,7 @@ class FileIcon extends StatelessWidget {
             return Icon(Icons.image, size: size, color: fileColor);
           },
         ),
-      FileType.video => FutureBuilder(
+      EntityType.video => FutureBuilder(
           future: _getVideoThumbnail(entity.path, size),
           builder: (context, snapshot) {
             return snapshot.connectionState != ConnectionState.done
@@ -55,15 +55,18 @@ class FileIcon extends StatelessWidget {
                     : Icon(Icons.question_mark, size: size, color: fileColor);
           },
         ),
-      FileType.word => MyFileIcon(text: 'W', size: size, color: Colors.blue),
-      FileType.excel => MyFileIcon(text: 'E', size: size, color: Colors.teal),
-      FileType.ppt => MyFileIcon(text: 'P', size: size, color: Colors.orange),
-      FileType.pdf => MyFileIcon(text: 'PDF', size: size, color: Colors.red),
-      FileType.mindMap => MyFileIcon(text: 'M', size: size, color: Colors.green),
-      FileType.document =>
-          Icon(Icons.description, size: size, color: fileColor),
-      FileType.archive => Icon(Icons.folder_zip, size: size, color: Colors.brown),
-      FileType.unknown => Icon(Icons.question_mark, size: size, color: fileColor),
+      EntityType.word => MyFileIcon(text: 'W', size: size, color: Colors.blue),
+      EntityType.excel => MyFileIcon(text: 'E', size: size, color: Colors.teal),
+      EntityType.ppt => MyFileIcon(text: 'P', size: size, color: Colors.orange),
+      EntityType.pdf => MyFileIcon(text: 'PDF', size: size, color: Colors.red),
+      EntityType.mindMap =>
+        MyFileIcon(text: 'M', size: size, color: Colors.green),
+      EntityType.document =>
+        Icon(Icons.description, size: size, color: fileColor),
+      EntityType.archive =>
+        Icon(Icons.folder_zip, size: size, color: Colors.brown),
+      EntityType.unknown =>
+        Icon(Icons.question_mark, size: size, color: fileColor),
     };
   }
 

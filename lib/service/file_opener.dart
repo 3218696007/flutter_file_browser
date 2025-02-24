@@ -12,7 +12,7 @@ class FileOpener {
         final mimeType = _getMimeType(filePath);
 
         final intent =
-            await const MethodChannel('com.qshh.file_brower/file_opener')
+            await const MethodChannel('com.qshh.file_browser/file_opener')
                 .invokeMethod(
           'openFile',
           {

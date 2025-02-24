@@ -15,7 +15,7 @@ class FileOpenerPlugin : FlutterPlugin, MethodCallHandler {
     private lateinit var context: Context
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        channel = MethodChannel(binding.binaryMessenger, "com.qshh.file_brower/file_opener")
+        channel = MethodChannel(binding.binaryMessenger, "com.qshh.file_browser/file_opener")
         context = binding.applicationContext
         channel.setMethodCallHandler(this)
     }
@@ -40,7 +40,7 @@ class FileOpenerPlugin : FlutterPlugin, MethodCallHandler {
 
                     val uri = FileProvider.getUriForFile(
                         context,
-                        "com.qshh.file_brower.fileprovider",
+                        "com.qshh.file_browser.fileprovider",
                         file
                     )
 

@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../controllers/file_browser_controller.dart';
-import '../../utils/file_opener.dart';
-import '../../utils/file_utils.dart';
+import '../../service/file_opener.dart';
+import '../../service/entity_utils.dart';
 import 'file_icon.dart';
 
 class FileBrowser extends StatefulWidget {
@@ -21,9 +21,8 @@ class _FileBrowserState extends State<FileBrowser> {
   int _lastTapIndex = -1;
   Offset _tapPosition = Offset.zero;
 
-  void _storePosition(TapDownDetails details) {
-    _tapPosition = details.globalPosition;
-  }
+  void _storePosition(TapDownDetails details) =>
+      _tapPosition = details.globalPosition;
 
   @override
   void initState() {
@@ -231,6 +230,7 @@ class _FileBrowserState extends State<FileBrowser> {
       );
     }
   }
+
   Widget _filesView() {
     if (_controller.errorMessage != null) {
       return Center(
@@ -267,7 +267,7 @@ class _FileBrowserState extends State<FileBrowser> {
             itemView: ListTile(
               minTileHeight: 0.4 * _itemSize,
               leading: FileIcon(entity: entity, size: 0.3 * _itemSize),
-              title: Text(FileUtils.getFileName(entity)),
+              title: Text(entity.name),
             ),
           );
         },
@@ -295,7 +295,7 @@ class _FileBrowserState extends State<FileBrowser> {
               children: [
                 FileIcon(entity: entity, size: 0.5 * _itemSize),
                 Text(
-                  FileUtils.getFileName(entity),
+                  entity.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
@@ -319,7 +319,7 @@ class _FileBrowserState extends State<FileBrowser> {
         onTapDown: _storePosition,
         onLongPress: () => _onLongTapItem(entity),
         onSecondaryTapDown: _storePosition,
-        onSecondaryTap: () => _showFileOperationMenu(context, entity),
+        onSecondaryTap: () => _showOperationMenu(context, entity),
         child: itemView,
       ),
     );
@@ -343,7 +343,7 @@ class _FileBrowserState extends State<FileBrowser> {
     }
   }
 
-  Future<void> _showFileOperationMenu(
+  Future<void> _showOperationMenu(
     BuildContext context,
     FileSystemEntity entity,
   ) async {
@@ -437,7 +437,7 @@ class _FileBrowserState extends State<FileBrowser> {
         final newName = await showDialog<String>(
           context: context,
           builder: (BuildContext context) {
-            String name = FileUtils.getFileName(entity);
+            String name = entity.name;
             return AlertDialog(
               title: const Text('重命名'),
               content: TextField(
@@ -475,7 +475,7 @@ class _FileBrowserState extends State<FileBrowser> {
           builder: (BuildContext context) {
             return AlertDialog(
               title: const Text('确认删除'),
-              content: Text('确定要删除 ${FileUtils.getFileName(entity)} 吗？'),
+              content: Text('确定要删除 ${entity.name} 吗？'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
@@ -504,12 +504,11 @@ class _FileBrowserState extends State<FileBrowser> {
         break;
       case 'properties':
         final properties = _controller.getFileProperties(entity);
-
         showDialog(
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
-              title: Text(FileUtils.getFileName(entity)),
+              title: Text(entity.name),
               content: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -545,7 +544,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   _onLongTapItem(FileSystemEntity entity) {
-    _showFileOperationMenu(context, entity);
+    _showOperationMenu(context, entity);
     _controller.toggleItemSelect(entity);
   }
 
