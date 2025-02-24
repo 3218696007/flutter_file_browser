@@ -10,6 +10,7 @@ class FileBrowserController with ChangeNotifier {
   String sortBy = 'name';
   String? errorMessage;
   bool isLoading = true;
+  bool isGridView = false;
   late PathNode currentNode;
 
   Future<void> initialize(String? initialPath) async {
@@ -173,12 +174,17 @@ class FileBrowserController with ChangeNotifier {
     }
   }
 
-  void switchItem(FileSystemEntity entity) {
+  void toggleItemSelect(FileSystemEntity entity) {
     if (selectedItems.contains(entity)) {
       selectedItems.remove(entity);
     } else {
       selectedItems.add(entity);
     }
+    notifyListeners();
+  }
+
+  void toggleView() {
+    isGridView = !isGridView;
     notifyListeners();
   }
 }
