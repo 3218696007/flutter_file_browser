@@ -1,10 +1,9 @@
 import 'dart:io';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../controllers/file_browser_controller.dart';
 import '../../utils/file_opener.dart';
 import '../../utils/file_utils.dart';
-import '../../widget/file_icon.dart';
+import 'file_icon.dart';
 
 class FileBrowser extends StatefulWidget {
   const FileBrowser({super.key, this.initialPath});
@@ -132,7 +131,7 @@ class _FileBrowserState extends State<FileBrowser> {
       Tooltip(
         message: '切换视图',
         child: IconButton(
-          icon: Icon(_controller.isGridView ? Icons.list : Icons.grid_view),
+          icon: Icon(_controller.isListView ? Icons.grid_view : Icons.list),
           onPressed: _controller.toggleView,
         ),
       ),
@@ -163,47 +162,8 @@ class _FileBrowserState extends State<FileBrowser> {
             Tooltip(
               message: '跳转到',
               child: IconButton(
-                onPressed: () async {
-                  String path = _controller.currentNode.path;
-                  await showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      final pathController = TextEditingController(
-                        text: _controller.currentNode.path,
-                      );
-                      // 自动全选路径
-                      pathController.selection = TextSelection(
-                        baseOffset: 0,
-                        extentOffset: pathController.text.length,
-                      );
-                      return AlertDialog(
-                        title: const Text('跳转到'),
-                        content: TextField(
-                          autofocus: true,
-                          controller: pathController,
-                          onChanged: (value) => path = value,
-                          onSubmitted: (_) => Navigator.pop(context),
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                  if(path == _controller.currentNode.path) return;
-                  final directory = Directory(path);
-                  if (directory.existsSync()) {
-                    _controller.openNewDirectory(path);
-                  } else if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('目录不存在'),
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.edit_outlined),
-              ),
+                  onPressed: _showJumpToDialog,
+                  icon: const Icon(Icons.edit_outlined)),
             ),
           ],
         ),
@@ -229,11 +189,48 @@ class _FileBrowserState extends State<FileBrowser> {
 
   Widget _breadcrumbButton(String label, String path) {
     return TextButton(
-      onPressed: () => _controller.openNewDirectory(path),
+      onPressed: () => _controller.openDirectory(path),
       child: Text(label, style: const TextStyle(color: Colors.black)),
     );
   }
 
+  void _showJumpToDialog() async {
+    String path = _controller.currentNode.path;
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        final pathController = TextEditingController(
+          text: _controller.currentNode.path,
+        );
+        // 自动全选路径
+        pathController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: pathController.text.length,
+        );
+        return AlertDialog(
+          title: const Text('跳转到'),
+          content: TextField(
+            autofocus: true,
+            controller: pathController,
+            onChanged: (value) => path = value,
+            onSubmitted: (_) => Navigator.pop(context),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+            ),
+          ),
+        );
+      },
+    );
+    if (Directory(path).existsSync()) {
+      _controller.openDirectory(path);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('目录不存在'),
+        ),
+      );
+    }
+  }
   Widget _filesView() {
     if (_controller.errorMessage != null) {
       return Center(
@@ -248,7 +245,7 @@ class _FileBrowserState extends State<FileBrowser> {
         ),
       );
     }
-    if(_controller.currentFiles.isEmpty){
+    if (_controller.currentFiles.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -259,59 +256,71 @@ class _FileBrowserState extends State<FileBrowser> {
         ),
       );
     }
-    if (_controller.isGridView) {
-      return GridView.builder(
-        key: PageStorageKey(_controller.currentNode),
-        padding: const EdgeInsets.all(8),
-        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: _itemSize,
-          mainAxisExtent: _itemSize,
-          childAspectRatio: 1,
-          crossAxisSpacing: 2,
-          mainAxisSpacing: 2,
-        ),
-        itemCount: _controller.currentFiles.length,
-        itemBuilder: (context, index) {
-          final entity = _controller.currentFiles[index];
-          return _buildGridItem(context, entity);
-        },
-      );
-    } else {
+    if (_controller.isListView) {
       return ListView.builder(
         key: PageStorageKey(_controller.currentNode),
         itemCount: _controller.currentFiles.length,
         itemBuilder: (context, index) {
           final entity = _controller.currentFiles[index];
-          return _buildListItem(context, entity);
+          return _itemBuilder(
+            entity,
+            itemView: ListTile(
+              minTileHeight: 0.4 * _itemSize,
+              leading: FileIcon(entity: entity, size: 0.3 * _itemSize),
+              title: Text(FileUtils.getFileName(entity)),
+            ),
+          );
         },
       );
     }
+    // else is grid view
+    return GridView.builder(
+      key: PageStorageKey(_controller.currentNode),
+      padding: const EdgeInsets.all(8),
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: _itemSize,
+        mainAxisExtent: _itemSize,
+        childAspectRatio: 1,
+        crossAxisSpacing: 2,
+        mainAxisSpacing: 2,
+      ),
+      itemCount: _controller.currentFiles.length,
+      itemBuilder: (context, index) {
+        final entity = _controller.currentFiles[index];
+        return _itemBuilder(
+          entity,
+          itemView: GridTile(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FileIcon(entity: entity, size: 0.5 * _itemSize),
+                Text(
+                  FileUtils.getFileName(entity),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
-  Widget _buildGridItem(BuildContext context, FileSystemEntity entity) {
+  Widget _itemBuilder(FileSystemEntity entity, {required Widget itemView}) {
     return Ink(
       color: _controller.selectedItems.contains(entity)
           ? Colors.blueGrey[200]
           : null,
       child: InkWell(
-        onTapDown: _storePosition,
         onTap: () => _onTapItem(entity),
+        onTapDown: _storePosition,
         onLongPress: () => _onLongTapItem(entity),
         onSecondaryTapDown: _storePosition,
         onSecondaryTap: () => _showFileOperationMenu(context, entity),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FileIconWidget(entity: entity, size: 0.5 * _itemSize),
-            Text(
-              FileUtils.getFileName(entity),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12),
-            ),
-          ],
-        ),
+        child: itemView,
       ),
     );
   }
@@ -332,26 +341,6 @@ class _FileBrowserState extends State<FileBrowser> {
       _lastTapTime = now;
       _lastTapIndex = index;
     }
-  }
-
-  Widget _buildListItem(BuildContext context, FileSystemEntity entity) {
-    return Ink(
-      color: _controller.selectedItems.contains(entity)
-          ? Colors.blueGrey[200]
-          : null,
-      child: InkWell(
-        onTap: () => _onTapItem(entity),
-        onTapDown: _storePosition,
-        onLongPress: () => _onLongTapItem(entity),
-        onSecondaryTapDown: _storePosition,
-        onSecondaryTap: () => _showFileOperationMenu(context, entity),
-        child: ListTile(
-          minTileHeight: 0.4 * _itemSize,
-          leading: FileIconWidget(entity: entity, size: 0.3 * _itemSize),
-          title: Text(FileUtils.getFileName(entity)),
-        ),
-      ),
-    );
   }
 
   Future<void> _showFileOperationMenu(
@@ -541,7 +530,7 @@ class _FileBrowserState extends State<FileBrowser> {
 
   void _openItem(FileSystemEntity entity) {
     if (entity is Directory) {
-      _controller.openNewDirectory(entity.path);
+      _controller.openDirectory(entity.path);
     } else {
       FileOpener.openFile(entity.path).then((error) {
         if (error != null) {

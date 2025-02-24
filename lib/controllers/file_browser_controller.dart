@@ -10,7 +10,7 @@ class FileBrowserController with ChangeNotifier {
   String sortBy = 'name';
   String? errorMessage;
   bool isLoading = true;
-  bool isGridView = false;
+  bool isListView = true;
   late PathNode currentNode;
 
   Future<void> initialize(String? initialPath) async {
@@ -98,8 +98,9 @@ class FileBrowserController with ChangeNotifier {
     return true;
   }
 
-  void openNewDirectory(String path) {
-    currentNode.setChild(PathNode(path));
+  void openDirectory(String newPath) {
+    if (FileSystemEntity.identicalSync(currentNode.path, newPath)) return;
+    currentNode.setChild(PathNode(newPath));
     goForward();
   }
 
@@ -113,7 +114,7 @@ class FileBrowserController with ChangeNotifier {
     loadCurrentFiles();
   }
 
-  void goUp() => openNewDirectory(Directory(currentNode.path).parent.path);
+  void goUp() => openDirectory(Directory(currentNode.path).parent.path);
 
   Future<String> renameFile(FileSystemEntity entity, String? newName) async {
     if (newName == null || newName.isEmpty) return '请输入新名称';
@@ -184,7 +185,7 @@ class FileBrowserController with ChangeNotifier {
   }
 
   void toggleView() {
-    isGridView = !isGridView;
+    isListView = !isListView;
     notifyListeners();
   }
 }

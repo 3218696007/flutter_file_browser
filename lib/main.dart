@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'page/browser/file_browser.dart';
+import 'view/browser/file_browser.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

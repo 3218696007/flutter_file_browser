@@ -13,7 +13,7 @@ enum FileType {
   excel,
   document,
   mindMap,
-  unknown,
+  unknown, ppt,
 }
 
 class FileUtils {
@@ -58,6 +58,8 @@ class FileUtils {
       case 'jpeg':
       case 'png':
       case 'gif':
+      case 'bmp':
+      case 'cr2':
         return FileType.image;
       case 'zip':
       case 'rar':
@@ -71,14 +73,17 @@ class FileUtils {
       case 'avi':
       case 'mkv':
         return FileType.video;
-      case 'pdf':
-        return FileType.pdf;
       case 'doc':
       case 'docx':
         return FileType.word;
       case 'xls':
       case 'xlsx':
         return FileType.excel;
+      case 'ppt':
+      case 'pptx':
+        return FileType.ppt;
+      case 'pdf':
+        return FileType.pdf;
       case 'txt':
         return FileType.document;
       case 'xmind':
