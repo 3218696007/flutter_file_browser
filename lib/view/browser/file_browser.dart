@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../controllers/file_browser_controller.dart';
 import '../../service/file_opener.dart';
 import '../../service/entity_utils.dart';
@@ -54,25 +55,55 @@ class _FileBrowserState extends State<FileBrowser> {
         return PopScope(
           canPop: false,
           onPopInvoked: _onPopInvoked,
-          child: Listener(
-            onPointerDown: (event) {
-              if (event.buttons == 8 && _controller.canGoBack) {
-                _controller.goBack();
-              }
-              if (event.buttons == 16 && _controller.canGoForward) {
-                _controller.goForward();
-              }
-            },
-            child: Scaffold(
-              appBar: AppBar(
-                leadingWidth: 0,
-                leading: const SizedBox(),
-                title: _barLeadingButtons(),
-                actions: _barActions(),
-                bottom: _breadcrumbNavBar(),
+          child: Focus(
+            autofocus: true,
+            onKeyEvent: _controller.isMultiSelectMode
+                ? null
+                : (node, event) {
+                    if (event is KeyDownEvent) {
+                      // 使用BrowserOperation处理快捷键
+                      final shortcuts = {
+                        for (final op in BrowserOperation.values)
+                          op.shortcut: op == BrowserOperation.jumpToPath
+                              ? _showJumpToDialog
+                              : op.getCallback(_controller),
+                      };
+                      // 检查是否匹配快捷键
+                      for (final shortcut in shortcuts.entries) {
+                        if (shortcut.key
+                            .accepts(event, HardwareKeyboard.instance)) {
+                          final callback = shortcut.value;
+                          if (callback != null) {
+                            callback();
+                            return KeyEventResult.handled;
+                          }
+                        }
+                      }
+                    }
+                    return KeyEventResult.ignored;
+                  },
+            child: Listener(
+              onPointerDown: _controller.isMultiSelectMode
+                  ? null
+                  : (event) {
+                      if (event.buttons == 8 && _controller.canGoBack) {
+                        _controller.goBack();
+                      }
+                      if (event.buttons == 16 && _controller.canGoForward) {
+                        _controller.goForward();
+                      }
+                    },
+              child: Scaffold(
+                appBar: AppBar(
+                  leadingWidth: 0,
+                  leading: const SizedBox(),
+                  title: _barLeadingButtons(),
+                  actions: _barActions(),
+                  bottom: _breadcrumbNavBar(),
+                ),
+                body: _filesView(),
+                // floatingActionButton:  _createItemButton(),
               ),
-              body: _filesView(),
-              // floatingActionButton:  _createItemButton(),
             ),
           ),
         );
@@ -81,6 +112,16 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   Widget _barLeadingButtons() {
+    if (_controller.isMultiSelectMode) {
+      return Row(
+        children: [
+          TextButton(
+            onPressed: _controller.cancelMultiSelect,
+            child: const Text('退出多选'),
+          ),
+        ],
+      );
+    }
     return Row(children: [
       Tooltip(
         message: '后退\n鼠标回退侧键',
@@ -100,6 +141,18 @@ class _FileBrowserState extends State<FileBrowser> {
         tooltip: '向上',
         icon: const Icon(Icons.arrow_upward),
         onPressed: _controller.canGoUp ? _controller.goUp : null,
+      ),
+      Tooltip(
+        message: '刷新',
+        child: IconButton(
+          icon: const Icon(Icons.refresh),
+          onPressed: _controller.loadCurrentFiles,
+          // onPressed: controller.loadCurrentFiles,
+        ),
+      ),
+      TextButton(
+        onPressed: _controller.enterMultiSelectMode,
+        child: const Text('多选', style: TextStyle(color: Colors.black)),
       ),
     ]);
   }
@@ -134,18 +187,20 @@ class _FileBrowserState extends State<FileBrowser> {
           onPressed: _controller.toggleView,
         ),
       ),
-      Tooltip(
-        message: '刷新',
-        child: IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: _controller.loadCurrentFiles,
-          // onPressed: controller.loadCurrentFiles,
-        ),
-      ),
     ];
   }
 
   PreferredSize _breadcrumbNavBar() {
+    if (_controller.isMultiSelectMode) {
+      return const PreferredSize(
+        preferredSize: Size.fromHeight(10),
+        child: Text(
+          '多选模式：禁用其它功能；点击切换选中状态；点击两个右上角连续切换选中状态',
+          textAlign: TextAlign.center,
+          maxLines: 2,
+        ),
+      );
+    }
     return PreferredSize(
       preferredSize: const Size.fromHeight(48),
       child: SizedBox(
@@ -263,7 +318,7 @@ class _FileBrowserState extends State<FileBrowser> {
         itemBuilder: (context, index) {
           final entity = _controller.currentFiles[index];
           return _itemBuilder(
-            entity,
+            index,
             itemView: ListTile(
               minTileHeight: 0.4 * _itemSize,
               leading: FileIcon(entity: entity, size: 0.3 * _itemSize),
@@ -288,7 +343,7 @@ class _FileBrowserState extends State<FileBrowser> {
       itemBuilder: (context, index) {
         final entity = _controller.currentFiles[index];
         return _itemBuilder(
-          entity,
+          index,
           itemView: GridTile(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -309,7 +364,8 @@ class _FileBrowserState extends State<FileBrowser> {
     );
   }
 
-  Widget _itemBuilder(FileSystemEntity entity, {required Widget itemView}) {
+  Widget _itemBuilder(int index, {required Widget itemView}) {
+    final entity = _controller.currentFiles[index];
     return Ink(
       color: _controller.selectedItems.contains(entity)
           ? Colors.blueGrey[200]
@@ -317,123 +373,97 @@ class _FileBrowserState extends State<FileBrowser> {
       child: InkWell(
         onTap: () => _onTapItem(entity),
         onTapDown: _storePosition,
-        onLongPress: () => _onLongTapItem(entity),
+        onLongPress: () => _showOperationMenu(entity),
         onSecondaryTapDown: _storePosition,
-        onSecondaryTap: () => _showOperationMenu(context, entity),
-        child: itemView,
+        onSecondaryTap: () => _showOperationMenu(entity),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            itemView,
+            if (_controller.isMultiSelectMode)
+              Positioned(
+                top: 0.1 * _itemSize,
+                right: 0.1 * _itemSize,
+                child: InkWell(
+                  onTap: () => _controller.consecutiveSelecte(index),
+                  child: Icon(
+                    Icons.linear_scale,
+                    color: _controller.indexStartedSelected == index
+                        ? Colors.blue
+                        : Colors.grey,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   void _onTapItem(FileSystemEntity entity) {
-    if (Platform.isAndroid) {
-      _openItem(entity);
-      return;
-    }
-    const doubleTapDelay = Duration(milliseconds: 300);
-    final now = DateTime.now();
-    final index = _controller.currentFiles.indexOf(entity);
-    if (now.difference(_lastTapTime) < doubleTapDelay &&
-        index == _lastTapIndex) {
+    if (_controller.isMultiSelectMode) {
+      _controller.toggleItemSelect(entity);
+    } else if (Platform.isAndroid) {
       _openItem(entity);
     } else {
-      _controller.toggleItemSelect(entity);
-      _lastTapTime = now;
-      _lastTapIndex = index;
+      const doubleTapDelay = Duration(milliseconds: 300);
+      final now = DateTime.now();
+      final index = _controller.currentFiles.indexOf(entity);
+      if (now.difference(_lastTapTime) < doubleTapDelay &&
+          index == _lastTapIndex) {
+        _openItem(entity);
+      } else {
+        _controller.cancelMultiSelect();
+        _controller.toggleItemSelect(entity);
+        _lastTapTime = now;
+        _lastTapIndex = index;
+      }
     }
   }
 
-  Future<void> _showOperationMenu(
-    BuildContext context,
-    FileSystemEntity entity,
-  ) async {
-    final RenderBox overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
-    final RelativeRect position = RelativeRect.fromRect(
-        _tapPosition & const Size(40, 40), Offset.zero & overlay.size);
-    final result = await showMenu<String>(
+  Future<void> _showOperationMenu(FileSystemEntity entity) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final position = RelativeRect.fromRect(
+      _tapPosition & const Size(40, 40),
+      Offset.zero & overlay.size,
+    );
+    final result = await showMenu<EntityOperation>(
       context: context,
       position: position,
-      items: [
-        const PopupMenuItem(
-          value: 'open',
+      items: EntityOperation.values.map((operation) {
+        return PopupMenuItem(
+          value: operation,
           child: Row(
             children: [
-              Icon(Icons.open_in_new),
-              SizedBox(width: 8),
-              Text('打开'),
+              operation.icon,
+              const SizedBox(width: 8),
+              Text(
+                operation.label,
+                style: TextStyle(
+                  color:
+                      operation == EntityOperation.delete ? Colors.red : null,
+                ),
+              ),
             ],
           ),
-        ),
-        const PopupMenuItem(
-          value: 'rename',
-          child: Row(
-            children: [
-              Icon(Icons.drive_file_rename_outline),
-              SizedBox(width: 8),
-              Text('重命名'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'copy',
-          child: Row(
-            children: [
-              Icon(Icons.content_copy),
-              SizedBox(width: 8),
-              Text('复制'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'cut',
-          child: Row(
-            children: [
-              Icon(Icons.content_cut),
-              SizedBox(width: 8),
-              Text('剪切'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'paste',
-          child: Row(
-            children: [
-              Icon(Icons.content_paste),
-              SizedBox(width: 8),
-              Text('粘贴'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'delete',
-          child: Row(
-            children: [
-              Icon(Icons.delete_outline, color: Colors.red),
-              SizedBox(width: 8),
-              Text('删除', style: TextStyle(color: Colors.red)),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'properties',
-          child: Row(
-            children: [
-              Icon(Icons.info_outline),
-              SizedBox(width: 8),
-              Text('属性'),
-            ],
-          ),
-        ),
-      ],
+        );
+      }).toList(),
     );
-    if (result == null) return;
-    if (!context.mounted) return;
-    switch (result) {
-      case 'open':
+    if (result != null && mounted) {
+      await _handleOperation(result, entity, context);
+    }
+  }
+
+  Future<void> _handleOperation(
+    EntityOperation operation,
+    FileSystemEntity entity,
+    BuildContext context,
+  ) async {
+    switch (operation) {
+      case EntityOperation.open:
         _openItem(entity);
         break;
-      case 'rename':
+      case EntityOperation.rename:
         final newName = await showDialog<String>(
           context: context,
           builder: (BuildContext context) {
@@ -469,7 +499,7 @@ class _FileBrowserState extends State<FileBrowser> {
           );
         });
         break;
-      case 'delete':
+      case EntityOperation.delete:
         showDialog<bool>(
           context: context,
           builder: (BuildContext context) {
@@ -502,7 +532,7 @@ class _FileBrowserState extends State<FileBrowser> {
           },
         );
         break;
-      case 'properties':
+      case EntityOperation.properties:
         final properties = _controller.getFileProperties(entity);
         showDialog(
           context: context,
@@ -524,6 +554,11 @@ class _FileBrowserState extends State<FileBrowser> {
           },
         );
         break;
+      case EntityOperation.cut:
+      case EntityOperation.copy:
+      case EntityOperation.paste:
+        // TODO: 实现剪切、复制、粘贴功能
+        break;
     }
   }
 
@@ -541,11 +576,6 @@ class _FileBrowserState extends State<FileBrowser> {
         }
       });
     }
-  }
-
-  _onLongTapItem(FileSystemEntity entity) {
-    _showOperationMenu(context, entity);
-    _controller.toggleItemSelect(entity);
   }
 
 // Widget _createItemButton() {

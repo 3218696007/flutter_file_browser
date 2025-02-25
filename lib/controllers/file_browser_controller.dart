@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/path_node.dart';
@@ -11,7 +13,22 @@ class FileBrowserController with ChangeNotifier {
   String? errorMessage;
   bool isLoading = true;
   bool isListView = true;
+  bool _multiSelectMode = false;
+
+  int? indexStartedSelected;
+  bool get isMultiSelectMode => _multiSelectMode;
   late PathNode currentNode;
+
+  void cancelMultiSelect() {
+    selectedItems.clear();
+    _multiSelectMode = false;
+    notifyListeners();
+  }
+
+  void enterMultiSelectMode() {
+    _multiSelectMode = true;
+    notifyListeners();
+  }
 
   Future<void> initialize(String? initialPath) async {
     currentNode = PathNode(initialPath ?? await getRootPath());
@@ -187,5 +204,70 @@ class FileBrowserController with ChangeNotifier {
   void toggleView() {
     isListView = !isListView;
     notifyListeners();
+  }
+
+  // Map<Type, Action<Intent>> get borwserActions {
+  //   return {
+  //     Intent: CallbackAction<Intent>(
+  //       onInvoke: (intent) {
+  //         return loadCurrentFiles();
+  //       },
+  //     ),
+  //   };
+  // }
+
+  void consecutiveSelecte(int index) {
+    if (indexStartedSelected == null) {
+      indexStartedSelected = index;
+    } else {
+      int i = min(indexStartedSelected!, index);
+      final end = max(indexStartedSelected!, index);
+      while (i <= end) {
+        toggleItemSelect(currentFiles[i]);
+        i++;
+      }
+      indexStartedSelected = null;
+    }
+    notifyListeners();
+  }
+}
+
+enum BrowserOperation {
+  refresh,
+  goBack,
+  goForward,
+  goUp,
+  toggleView,
+  jumpToPath,
+}
+
+extension BrowserOperationExtension on BrowserOperation {
+  LogicalKeySet get shortcut {
+    return switch (this) {
+      BrowserOperation.refresh => LogicalKeySet(LogicalKeyboardKey.f5),
+      BrowserOperation.goBack =>
+        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.arrowLeft),
+      BrowserOperation.goForward =>
+        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.arrowRight),
+      BrowserOperation.goUp =>
+        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.arrowUp),
+      BrowserOperation.toggleView =>
+        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.keyV),
+      BrowserOperation.jumpToPath =>
+        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.keyL),
+    };
+  }
+
+  Function? getCallback(FileBrowserController controller) {
+    return switch (this) {
+      BrowserOperation.refresh => controller.loadCurrentFiles,
+      BrowserOperation.goBack =>
+        controller.canGoBack ? controller.goBack : null,
+      BrowserOperation.goForward =>
+        controller.canGoForward ? controller.goForward : null,
+      BrowserOperation.goUp => controller.canGoUp ? controller.goUp : null,
+      BrowserOperation.toggleView => controller.toggleView,
+      BrowserOperation.jumpToPath => null,
+    };
   }
 }
