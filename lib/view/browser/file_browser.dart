@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../controllers/file_browser_controller.dart';
 import '../../service/file_opener.dart';
 import '../../service/entity_utils.dart';
@@ -55,33 +54,8 @@ class _FileBrowserState extends State<FileBrowser> {
         return PopScope(
           canPop: false,
           onPopInvoked: _onPopInvoked,
-          child: Focus(
-            autofocus: true,
-            onKeyEvent: _controller.isMultiSelectMode
-                ? null
-                : (node, event) {
-                    if (event is KeyDownEvent) {
-                      // 使用BrowserOperation处理快捷键
-                      final shortcuts = {
-                        for (final op in BrowserOperation.values)
-                          op.shortcut: op == BrowserOperation.jumpToPath
-                              ? _showJumpToDialog
-                              : op.getCallback(_controller),
-                      };
-                      // 检查是否匹配快捷键
-                      for (final shortcut in shortcuts.entries) {
-                        if (shortcut.key
-                            .accepts(event, HardwareKeyboard.instance)) {
-                          final callback = shortcut.value;
-                          if (callback != null) {
-                            callback();
-                            return KeyEventResult.handled;
-                          }
-                        }
-                      }
-                    }
-                    return KeyEventResult.ignored;
-                  },
+          child: CallbackShortcuts(
+            bindings: _controller.shortcutbindings,
             child: Listener(
               onPointerDown: _controller.isMultiSelectMode
                   ? null
@@ -93,16 +67,19 @@ class _FileBrowserState extends State<FileBrowser> {
                         _controller.goForward();
                       }
                     },
-              child: Scaffold(
-                appBar: AppBar(
-                  leadingWidth: 0,
-                  leading: const SizedBox(),
-                  title: _barLeadingButtons(),
-                  actions: _barActions(),
-                  bottom: _breadcrumbNavBar(),
+              child: Focus(
+                autofocus: true,
+                child: Scaffold(
+                  appBar: AppBar(
+                    leadingWidth: 0,
+                    leading: const SizedBox(),
+                    title: _barLeadingButtons(),
+                    actions: _barActions(),
+                    bottom: _breadcrumbNavBar(),
+                  ),
+                  body: _filesView(),
+                  // floatingActionButton:  _createItemButton(),
                 ),
-                body: _filesView(),
-                // floatingActionButton:  _createItemButton(),
               ),
             ),
           ),
@@ -249,7 +226,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   void _showJumpToDialog() async {
-    String path = _controller.currentNode.path;
+    String pathWillJumpTo = _controller.currentNode.path;
     await showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -266,7 +243,7 @@ class _FileBrowserState extends State<FileBrowser> {
           content: TextField(
             autofocus: true,
             controller: pathController,
-            onChanged: (value) => path = value,
+            onChanged: (value) => pathWillJumpTo = value,
             onSubmitted: (_) => Navigator.pop(context),
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
@@ -275,15 +252,7 @@ class _FileBrowserState extends State<FileBrowser> {
         );
       },
     );
-    if (Directory(path).existsSync()) {
-      _controller.openDirectory(path);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('目录不存在'),
-        ),
-      );
-    }
+    _controller.openDirectory(pathWillJumpTo);
   }
 
   Widget _filesView() {
@@ -293,9 +262,7 @@ class _FileBrowserState extends State<FileBrowser> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 16),
             Text(_controller.errorMessage!, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
           ],
         ),
       );

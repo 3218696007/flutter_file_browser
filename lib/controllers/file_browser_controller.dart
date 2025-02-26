@@ -10,7 +10,15 @@ class FileBrowserController with ChangeNotifier {
   List<FileSystemEntity> currentFiles = [];
   final selectedItems = <FileSystemEntity>[];
   String sortBy = 'name';
-  String? errorMessage;
+  String? _errorMessage;
+
+  void setErrorMessageAndNotify(String? value) {
+    _errorMessage = value;
+    notifyListeners();
+  }
+
+  String? get errorMessage => _errorMessage;
+
   bool isLoading = true;
   bool isListView = true;
   bool _multiSelectMode = false;
@@ -18,6 +26,12 @@ class FileBrowserController with ChangeNotifier {
   int? indexStartedSelected;
   bool get isMultiSelectMode => _multiSelectMode;
   late PathNode currentNode;
+
+  Map<ShortcutActivator, VoidCallback> get shortcutbindings {
+    return Map.fromEntries(BrowserOperation.values.map(
+      (op) => op.getShortcutAndCallback(this),
+    ));
+  }
 
   void cancelMultiSelect() {
     selectedItems.clear();
@@ -62,13 +76,12 @@ class FileBrowserController with ChangeNotifier {
     try {
       final directory = Directory(currentNode.path);
       currentFiles = _sortFiles(await directory.list().toList());
-      errorMessage = null;
-    } catch (e) {
-      debugPrint('无法访问该目录: $e');
-      errorMessage = '无法访问该目录，可能是因为权限不足。\n请尝试访问其他目录或检查应用权限设置。';
+      isLoading = false;
+      setErrorMessageAndNotify(null);
+    } on Exception catch (e) {
+      isLoading = false;
+      setErrorMessageAndNotify('无法访问该目录: $e');
     }
-    isLoading = false;
-    notifyListeners();
   }
 
   List<FileSystemEntity> _sortFiles(List<FileSystemEntity> files) {
@@ -116,7 +129,9 @@ class FileBrowserController with ChangeNotifier {
   }
 
   void openDirectory(String newPath) {
-    if (FileSystemEntity.identicalSync(currentNode.path, newPath)) return;
+    try {
+      if (FileSystemEntity.identicalSync(currentNode.path, newPath)) return;
+    } catch (_) {}
     currentNode.setChild(PathNode(newPath));
     goForward();
   }
@@ -238,23 +253,38 @@ enum BrowserOperation {
   goForward,
   goUp,
   toggleView,
-  jumpToPath,
 }
 
 extension BrowserOperationExtension on BrowserOperation {
-  LogicalKeySet get shortcut {
+  MapEntry<ShortcutActivator, VoidCallback> getShortcutAndCallback(
+      FileBrowserController controller) {
     return switch (this) {
-      BrowserOperation.refresh => LogicalKeySet(LogicalKeyboardKey.f5),
-      BrowserOperation.goBack =>
-        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.arrowLeft),
-      BrowserOperation.goForward =>
-        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.arrowRight),
-      BrowserOperation.goUp =>
-        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.arrowUp),
-      BrowserOperation.toggleView =>
-        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.keyV),
-      BrowserOperation.jumpToPath =>
-        LogicalKeySet(LogicalKeyboardKey.alt, LogicalKeyboardKey.keyL),
+      BrowserOperation.refresh => MapEntry(
+          const SingleActivator(LogicalKeyboardKey.f5),
+          controller.loadCurrentFiles,
+        ),
+      BrowserOperation.goBack => MapEntry(
+          const SingleActivator(alt: true, LogicalKeyboardKey.arrowLeft),
+          () {
+            if (controller.canGoBack) controller.goBack();
+          },
+        ),
+      BrowserOperation.goForward => MapEntry(
+          const SingleActivator(alt: true, LogicalKeyboardKey.arrowRight),
+          () {
+            if (controller.canGoForward) controller.goForward();
+          },
+        ),
+      BrowserOperation.goUp => MapEntry(
+          const SingleActivator(alt: true, LogicalKeyboardKey.arrowUp),
+          () {
+            if (controller.canGoUp) controller.goUp();
+          },
+        ),
+      BrowserOperation.toggleView => MapEntry(
+          const SingleActivator(alt: true, LogicalKeyboardKey.keyV),
+          controller.toggleView,
+        ),
     };
   }
 
@@ -267,7 +297,6 @@ extension BrowserOperationExtension on BrowserOperation {
         controller.canGoForward ? controller.goForward : null,
       BrowserOperation.goUp => controller.canGoUp ? controller.goUp : null,
       BrowserOperation.toggleView => controller.toggleView,
-      BrowserOperation.jumpToPath => null,
     };
   }
 }
