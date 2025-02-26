@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../models/path_node.dart';
+import '../model/path_node.dart';
+import '../service/file_opener.dart';
 
 class FileBrowserController with ChangeNotifier {
-  List<FileSystemEntity> currentFiles = [];
+  List<FileSystemEntity> entities = [];
   final selectedItems = <FileSystemEntity>[];
   String sortBy = 'name';
   String? _errorMessage;
+  DateTime _lastTapTime = DateTime(0);
+  int _lastTapIndex = -1;
 
   void setErrorMessageAndNotify(String? value) {
     _errorMessage = value;
@@ -28,7 +31,7 @@ class FileBrowserController with ChangeNotifier {
   late PathNode currentNode;
 
   Map<ShortcutActivator, VoidCallback> get shortcutbindings {
-    return Map.fromEntries(BrowserOperation.values.map(
+    return Map.fromEntries(ShortcutOperation.values.map(
       (op) => op.getShortcutAndCallback(this),
     ));
   }
@@ -46,7 +49,7 @@ class FileBrowserController with ChangeNotifier {
 
   Future<void> initialize(String? initialPath) async {
     currentNode = PathNode(initialPath ?? await getRootPath());
-    loadCurrentFiles();
+    loadFilesAndNotify();
   }
 
   Future<String> getRootPath() async {
@@ -70,12 +73,12 @@ class FileBrowserController with ChangeNotifier {
 
   bool get canGoForward => currentNode.child != null;
 
-  Future<void> loadCurrentFiles() async {
+  Future<void> loadFilesAndNotify() async {
     isLoading = true;
     notifyListeners();
     try {
       final directory = Directory(currentNode.path);
-      currentFiles = _sortFiles(await directory.list().toList());
+      entities = _sortFiles(await directory.list().toList());
       isLoading = false;
       setErrorMessageAndNotify(null);
     } on Exception catch (e) {
@@ -111,7 +114,7 @@ class FileBrowserController with ChangeNotifier {
 
   void changeSortMethod(String method) {
     sortBy = method;
-    currentFiles = _sortFiles(currentFiles);
+    entities = _sortFiles(entities);
     notifyListeners();
   }
 
@@ -138,12 +141,12 @@ class FileBrowserController with ChangeNotifier {
 
   void goBack() {
     currentNode = currentNode.parent!;
-    loadCurrentFiles();
+    loadFilesAndNotify();
   }
 
   void goForward() {
     currentNode = currentNode.child!;
-    loadCurrentFiles();
+    loadFilesAndNotify();
   }
 
   void goUp() => openDirectory(Directory(currentNode.path).parent.path);
@@ -154,23 +157,29 @@ class FileBrowserController with ChangeNotifier {
       final directory = Directory(entity.path).parent;
       final newPath = '${directory.path}${Platform.pathSeparator}$newName';
       await entity.rename(newPath);
-      loadCurrentFiles();
+      loadFilesAndNotify();
       return '重命名成功';
     } catch (e) {
       return '重命名失败: $e';
     }
   }
 
-  Future<String> deleteFile(FileSystemEntity entity) async {
+  Future<String> deleteEntitiesToRecycle() async {
     try {
-      if (entity is Directory) {
+      for (final entity in selectedItems) {
+        // TODO 删除到回收站
         await entity.delete(recursive: true);
-      } else {
-        await entity.delete();
+        // if (entity is Directory) {
+        //   await entity.delete(recursive: true);
+        // } else {
+        //   await entity.delete();
+        // }
       }
-      loadCurrentFiles();
+      cancelMultiSelect();
+      loadFilesAndNotify();
       return '删除成功';
     } catch (e) {
+      cancelMultiSelect();
       return '删除失败: $e';
     }
   }
@@ -200,7 +209,7 @@ class FileBrowserController with ChangeNotifier {
     final newPath = '${currentNode.path}/$folderName';
     try {
       await Directory(newPath).create();
-      loadCurrentFiles();
+      loadFilesAndNotify();
       return '创建成功';
     } on Exception catch (e) {
       return '创建失败: $e';
@@ -221,16 +230,6 @@ class FileBrowserController with ChangeNotifier {
     notifyListeners();
   }
 
-  // Map<Type, Action<Intent>> get borwserActions {
-  //   return {
-  //     Intent: CallbackAction<Intent>(
-  //       onInvoke: (intent) {
-  //         return loadCurrentFiles();
-  //       },
-  //     ),
-  //   };
-  // }
-
   void consecutiveSelecte(int index) {
     if (indexStartedSelected == null) {
       indexStartedSelected = index;
@@ -238,65 +237,87 @@ class FileBrowserController with ChangeNotifier {
       int i = min(indexStartedSelected!, index);
       final end = max(indexStartedSelected!, index);
       while (i <= end) {
-        toggleItemSelect(currentFiles[i]);
+        toggleItemSelect(entities[i]);
         i++;
       }
       indexStartedSelected = null;
     }
     notifyListeners();
   }
+
+  void openItem(FileSystemEntity entity) {
+    if (entity is Directory) {
+      openDirectory(entity.path);
+    } else {
+      FileOpener.openFile(entity.path);
+    }
+  }
+
+  void onTapItem(FileSystemEntity entity) {
+    if (isMultiSelectMode) {
+      toggleItemSelect(entity);
+    } else if (Platform.isAndroid) {
+      openItem(entity);
+    } else {
+      const doubleTapDelay = Duration(milliseconds: 300);
+      final now = DateTime.now();
+      final index = entities.indexOf(entity);
+      if (now.difference(_lastTapTime) < doubleTapDelay &&
+          index == _lastTapIndex) {
+        openItem(entity);
+      } else {
+        selectedItems.clear();
+        toggleItemSelect(entity);
+        _lastTapTime = now;
+        _lastTapIndex = index;
+      }
+    }
+  }
 }
 
-enum BrowserOperation {
+enum ShortcutOperation {
   refresh,
   goBack,
   goForward,
   goUp,
   toggleView,
+  delete,
 }
 
-extension BrowserOperationExtension on BrowserOperation {
+extension BrowserOperationExtension on ShortcutOperation {
   MapEntry<ShortcutActivator, VoidCallback> getShortcutAndCallback(
       FileBrowserController controller) {
     return switch (this) {
-      BrowserOperation.refresh => MapEntry(
+      ShortcutOperation.refresh => MapEntry(
           const SingleActivator(LogicalKeyboardKey.f5),
-          controller.loadCurrentFiles,
+          controller.loadFilesAndNotify,
         ),
-      BrowserOperation.goBack => MapEntry(
+      ShortcutOperation.goBack => MapEntry(
           const SingleActivator(alt: true, LogicalKeyboardKey.arrowLeft),
           () {
             if (controller.canGoBack) controller.goBack();
           },
         ),
-      BrowserOperation.goForward => MapEntry(
+      ShortcutOperation.goForward => MapEntry(
           const SingleActivator(alt: true, LogicalKeyboardKey.arrowRight),
           () {
             if (controller.canGoForward) controller.goForward();
           },
         ),
-      BrowserOperation.goUp => MapEntry(
+      ShortcutOperation.goUp => MapEntry(
           const SingleActivator(alt: true, LogicalKeyboardKey.arrowUp),
           () {
             if (controller.canGoUp) controller.goUp();
           },
         ),
-      BrowserOperation.toggleView => MapEntry(
+      ShortcutOperation.toggleView => MapEntry(
           const SingleActivator(alt: true, LogicalKeyboardKey.keyV),
           controller.toggleView,
         ),
-    };
-  }
-
-  Function? getCallback(FileBrowserController controller) {
-    return switch (this) {
-      BrowserOperation.refresh => controller.loadCurrentFiles,
-      BrowserOperation.goBack =>
-        controller.canGoBack ? controller.goBack : null,
-      BrowserOperation.goForward =>
-        controller.canGoForward ? controller.goForward : null,
-      BrowserOperation.goUp => controller.canGoUp ? controller.goUp : null,
-      BrowserOperation.toggleView => controller.toggleView,
+      ShortcutOperation.delete => MapEntry(
+          const SingleActivator(LogicalKeyboardKey.delete),
+          () => controller.deleteEntitiesToRecycle(),
+        ),
     };
   }
 }
