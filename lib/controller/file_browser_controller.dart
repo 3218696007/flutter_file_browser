@@ -1,15 +1,14 @@
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../model/path_node.dart';
-import '../service/file_opener.dart';
+import '../service/entity_operator.dart';
 
 class FileBrowserController with ChangeNotifier {
   List<FileSystemEntity> entities = [];
-  final selectedItems = <FileSystemEntity>[];
+  final selectedEntities = <FileSystemEntity>[];
   String sortBy = 'name';
   String? _errorMessage;
   DateTime _lastTapTime = DateTime(0);
@@ -30,14 +29,8 @@ class FileBrowserController with ChangeNotifier {
   bool get isMultiSelectMode => _multiSelectMode;
   late PathNode currentNode;
 
-  Map<ShortcutActivator, VoidCallback> get shortcutbindings {
-    return Map.fromEntries(ShortcutOperation.values.map(
-      (op) => op.getShortcutAndCallback(this),
-    ));
-  }
-
   void cancelMultiSelect() {
-    selectedItems.clear();
+    selectedEntities.clear();
     _multiSelectMode = false;
     notifyListeners();
   }
@@ -49,7 +42,7 @@ class FileBrowserController with ChangeNotifier {
 
   Future<void> initialize(String? initialPath) async {
     currentNode = PathNode(initialPath ?? await getRootPath());
-    loadFilesAndNotify();
+    loadEntitiesAndNotify();
   }
 
   Future<String> getRootPath() async {
@@ -64,21 +57,27 @@ class FileBrowserController with ChangeNotifier {
   }
 
   bool get canGoUp {
+    if (isMultiSelectMode) return false;
     final parentDirectory = Directory(currentNode.path).parent;
     return parentDirectory.existsSync() &&
         parentDirectory.path != currentNode.path;
   }
 
-  bool get canGoBack => currentNode.parent != null;
+  bool get canGoBack {
+    return currentNode.parent != null && !isMultiSelectMode;
+  }
 
-  bool get canGoForward => currentNode.child != null;
+  bool get canGoForward {
+    return currentNode.child != null && !isMultiSelectMode;
+  }
 
-  Future<void> loadFilesAndNotify() async {
+  Future<void> loadEntitiesAndNotify() async {
     isLoading = true;
     notifyListeners();
+    selectedEntities.clear();
     try {
       final directory = Directory(currentNode.path);
-      entities = _sortFiles(await directory.list().toList());
+      entities = _sortEntities(await directory.list().toList());
       isLoading = false;
       setErrorMessageAndNotify(null);
     } on Exception catch (e) {
@@ -87,51 +86,56 @@ class FileBrowserController with ChangeNotifier {
     }
   }
 
-  List<FileSystemEntity> _sortFiles(List<FileSystemEntity> files) {
+  List<FileSystemEntity> _sortEntities(List<FileSystemEntity> entities) {
     switch (sortBy) {
       case 'name':
-        return files
+        return entities
           ..sort(
               (a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
       case 'date':
-        return files
+        return entities
           ..sort(
               (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
       case 'size':
-        return files
-          ..sort((a, b) {
-            if (a is Directory && b is File) return -1;
-            if (a is File && b is Directory) return 1;
-            if (a is File && b is File) {
-              return b.lengthSync().compareTo(a.lengthSync());
-            }
-            return 0;
-          });
+        try {
+          return entities
+            ..sort((a, b) {
+              if (a is Directory && b is File) return -1;
+              if (a is File && b is Directory) return 1;
+              if (a is File && b is File) {
+                return b.lengthSync().compareTo(a.lengthSync());
+              }
+              return 0;
+            });
+        } catch (_) {
+          return entities;
+        }
       default:
-        return files;
+        return entities;
     }
   }
 
   void changeSortMethod(String method) {
     sortBy = method;
-    entities = _sortFiles(entities);
+    entities = _sortEntities(entities);
     notifyListeners();
   }
 
   DateTime _lastPopTime = DateTime(0);
 
-  bool cantPopOrBack() {
+  bool popOrBack() {
     if (canGoBack) {
       goBack();
-      return false;
+      return true;
     }
     final now = DateTime.now();
     if (now.difference(_lastPopTime) <= const Duration(seconds: 2)) exit(0);
     _lastPopTime = now;
-    return true;
+    return false;
   }
 
   void openDirectory(String newPath) {
+    selectedEntities.clear();
     try {
       if (FileSystemEntity.identicalSync(currentNode.path, newPath)) return;
     } catch (_) {}
@@ -141,86 +145,23 @@ class FileBrowserController with ChangeNotifier {
 
   void goBack() {
     currentNode = currentNode.parent!;
-    loadFilesAndNotify();
+    loadEntitiesAndNotify();
   }
 
   void goForward() {
     currentNode = currentNode.child!;
-    loadFilesAndNotify();
+    loadEntitiesAndNotify();
   }
 
   void goUp() => openDirectory(Directory(currentNode.path).parent.path);
 
-  Future<String> renameFile(FileSystemEntity entity, String? newName) async {
-    if (newName == null || newName.isEmpty) return '请输入新名称';
-    try {
-      final directory = Directory(entity.path).parent;
-      final newPath = '${directory.path}${Platform.pathSeparator}$newName';
-      await entity.rename(newPath);
-      loadFilesAndNotify();
-      return '重命名成功';
-    } catch (e) {
-      return '重命名失败: $e';
-    }
-  }
-
-  Future<String> deleteEntitiesToRecycle() async {
-    try {
-      for (final entity in selectedItems) {
-        // TODO 删除到回收站
-        await entity.delete(recursive: true);
-        // if (entity is Directory) {
-        //   await entity.delete(recursive: true);
-        // } else {
-        //   await entity.delete();
-        // }
-      }
-      cancelMultiSelect();
-      loadFilesAndNotify();
-      return '删除成功';
-    } catch (e) {
-      cancelMultiSelect();
-      return '删除失败: $e';
-    }
-  }
-
-  Map<String, dynamic> getFileProperties(FileSystemEntity entity) {
-    try {
-      final stat = entity.statSync();
-      final properties = <String, dynamic>{
-        '名称': entity.path.split(Platform.pathSeparator).last,
-        '路径': entity.path,
-        '修改时间': stat.modified.toString(),
-        '访问时间': stat.accessed.toString(),
-        '创建时间': stat.changed.toString(),
-      };
-
-      if (entity is File) {
-        properties['大小'] = '${(entity.lengthSync()) ~/ 1024} KB';
-      }
-
-      return properties;
-    } catch (e) {
-      throw '获取属性失败: $e';
-    }
-  }
-
-  Future<String> createDirectory(String? folderName) async {
-    final newPath = '${currentNode.path}/$folderName';
-    try {
-      await Directory(newPath).create();
-      loadFilesAndNotify();
-      return '创建成功';
-    } on Exception catch (e) {
-      return '创建失败: $e';
-    }
-  }
-
   void toggleItemSelect(FileSystemEntity entity) {
-    if (selectedItems.contains(entity)) {
-      selectedItems.remove(entity);
+    final existingIndex = selectedEntities
+        .indexWhere((e) => FileSystemEntity.identicalSync(e.path, entity.path));
+    if (existingIndex != -1) {
+      selectedEntities.removeAt(existingIndex);
     } else {
-      selectedItems.add(entity);
+      selectedEntities.add(entity);
     }
     notifyListeners();
   }
@@ -245,11 +186,11 @@ class FileBrowserController with ChangeNotifier {
     notifyListeners();
   }
 
-  void openItem(FileSystemEntity entity) {
+  void openEntity(FileSystemEntity entity) {
     if (entity is Directory) {
       openDirectory(entity.path);
     } else {
-      FileOpener.openFile(entity.path);
+      EntityOperator.openFile(entity.path);
     }
   }
 
@@ -257,67 +198,20 @@ class FileBrowserController with ChangeNotifier {
     if (isMultiSelectMode) {
       toggleItemSelect(entity);
     } else if (Platform.isAndroid) {
-      openItem(entity);
+      openEntity(entity);
     } else {
       const doubleTapDelay = Duration(milliseconds: 300);
       final now = DateTime.now();
       final index = entities.indexOf(entity);
       if (now.difference(_lastTapTime) < doubleTapDelay &&
           index == _lastTapIndex) {
-        openItem(entity);
+        openEntity(entity);
       } else {
-        selectedItems.clear();
+        selectedEntities.clear();
         toggleItemSelect(entity);
         _lastTapTime = now;
         _lastTapIndex = index;
       }
     }
-  }
-}
-
-enum ShortcutOperation {
-  refresh,
-  goBack,
-  goForward,
-  goUp,
-  toggleView,
-  delete,
-}
-
-extension BrowserOperationExtension on ShortcutOperation {
-  MapEntry<ShortcutActivator, VoidCallback> getShortcutAndCallback(
-      FileBrowserController controller) {
-    return switch (this) {
-      ShortcutOperation.refresh => MapEntry(
-          const SingleActivator(LogicalKeyboardKey.f5),
-          controller.loadFilesAndNotify,
-        ),
-      ShortcutOperation.goBack => MapEntry(
-          const SingleActivator(alt: true, LogicalKeyboardKey.arrowLeft),
-          () {
-            if (controller.canGoBack) controller.goBack();
-          },
-        ),
-      ShortcutOperation.goForward => MapEntry(
-          const SingleActivator(alt: true, LogicalKeyboardKey.arrowRight),
-          () {
-            if (controller.canGoForward) controller.goForward();
-          },
-        ),
-      ShortcutOperation.goUp => MapEntry(
-          const SingleActivator(alt: true, LogicalKeyboardKey.arrowUp),
-          () {
-            if (controller.canGoUp) controller.goUp();
-          },
-        ),
-      ShortcutOperation.toggleView => MapEntry(
-          const SingleActivator(alt: true, LogicalKeyboardKey.keyV),
-          controller.toggleView,
-        ),
-      ShortcutOperation.delete => MapEntry(
-          const SingleActivator(LogicalKeyboardKey.delete),
-          () => controller.deleteEntitiesToRecycle(),
-        ),
-    };
   }
 }

@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../controller/file_browser_controller.dart';
 import '../../service/entity_utils.dart';
+import '../../service/entity_operator.dart';
 import 'file_icon.dart';
 
 class FileBrowser extends StatefulWidget {
@@ -28,7 +30,8 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   _onPopInvoked(_) {
-    if (_controller.cantPopOrBack()) {
+    if (_controller.isMultiSelectMode) return;
+    if (!_controller.popOrBack()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('再按一次返回键退出应用'),
@@ -37,6 +40,24 @@ class _FileBrowserState extends State<FileBrowser> {
       );
     }
   }
+
+  Map<ShortcutActivator, VoidCallback> get _shortcutbindings => {
+        const SingleActivator(LogicalKeyboardKey.f5):
+            _controller.loadEntitiesAndNotify,
+        const SingleActivator(alt: true, LogicalKeyboardKey.arrowLeft): () {
+          if (_controller.canGoBack) _controller.goBack();
+        },
+        const SingleActivator(alt: true, LogicalKeyboardKey.arrowRight): () {
+          if (_controller.canGoForward) _controller.goForward();
+        },
+        const SingleActivator(alt: true, LogicalKeyboardKey.arrowUp): () {
+          if (_controller.canGoUp) _controller.goUp();
+        },
+        const SingleActivator(alt: true, LogicalKeyboardKey.keyV):
+            _controller.toggleView,
+        const SingleActivator(LogicalKeyboardKey.delete): () =>
+            _deleteSelectedItems,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +73,7 @@ class _FileBrowserState extends State<FileBrowser> {
           canPop: false,
           onPopInvoked: _onPopInvoked,
           child: CallbackShortcuts(
-            bindings: _controller.shortcutbindings,
+            bindings: _shortcutbindings,
             child: Listener(
               onPointerDown: _controller.isMultiSelectMode
                   ? null
@@ -94,49 +115,54 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   Widget _barLeadingButtons() {
-    if (_controller.isMultiSelectMode) {
-      return Row(
-        children: [
-          TextButton(
-            onPressed: _controller.cancelMultiSelect,
-            child: const Text('退出多选'),
-          ),
-        ],
-      );
-    }
-    return Row(children: [
-      Tooltip(
-        message: '后退\n鼠标回退侧键',
-        child: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _controller.canGoBack ? _controller.goBack : null,
-        ),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: _controller.isMultiSelectMode
+            ? [
+                TextButton(
+                  onPressed: _controller.cancelMultiSelect,
+                  child: const Text('退出多选'),
+                ),
+              ]
+            : [
+                Tooltip(
+                  message: '后退\n鼠标回退侧键',
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed:
+                        _controller.canGoBack ? _controller.goBack : null,
+                  ),
+                ),
+                Tooltip(
+                  message: '前进\n鼠标前进侧键',
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_forward),
+                    onPressed:
+                        _controller.canGoForward ? _controller.goForward : null,
+                  ),
+                ),
+                IconButton(
+                  tooltip: '向上',
+                  icon: const Icon(Icons.arrow_upward),
+                  onPressed: _controller.canGoUp ? _controller.goUp : null,
+                ),
+                Tooltip(
+                  message: '刷新',
+                  child: IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: _controller.loadEntitiesAndNotify,
+                    // onPressed: controller.loadCurrentFiles,
+                  ),
+                ),
+                TextButton(
+                  onPressed: _controller.enterMultiSelectMode,
+                  child:
+                      const Text('多选', style: TextStyle(color: Colors.black)),
+                ),
+              ],
       ),
-      Tooltip(
-        message: '前进\n鼠标前进侧键',
-        child: IconButton(
-          icon: const Icon(Icons.arrow_forward),
-          onPressed: _controller.canGoForward ? _controller.goForward : null,
-        ),
-      ),
-      IconButton(
-        tooltip: '向上',
-        icon: const Icon(Icons.arrow_upward),
-        onPressed: _controller.canGoUp ? _controller.goUp : null,
-      ),
-      Tooltip(
-        message: '刷新',
-        child: IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: _controller.loadFilesAndNotify,
-          // onPressed: controller.loadCurrentFiles,
-        ),
-      ),
-      TextButton(
-        onPressed: _controller.enterMultiSelectMode,
-        child: const Text('多选', style: TextStyle(color: Colors.black)),
-      ),
-    ]);
+    );
   }
 
   List<Widget> _barActions() {
@@ -188,7 +214,7 @@ class _FileBrowserState extends State<FileBrowser> {
             Tooltip(
               message: '跳转到',
               child: IconButton(
-                  onPressed: _showJumpToDialog,
+                  onPressed: _jumpToPath,
                   icon: const Icon(Icons.edit_outlined)),
             ),
           ],
@@ -220,35 +246,11 @@ class _FileBrowserState extends State<FileBrowser> {
     );
   }
 
-  void _showJumpToDialog() async {
-    String pathWillJump = _controller.currentNode.path;
-    await showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        final pathController = TextEditingController(
-          text: _controller.currentNode.path,
-        );
-        // 自动全选路径
-        pathController.selection = TextSelection(
-          baseOffset: 0,
-          extentOffset: pathController.text.length,
-        );
-        return AlertDialog(
-          title: const Text('跳转到'),
-          content: TextField(
-            autofocus: true,
-            controller: pathController,
-            onChanged: (value) => pathWillJump = value,
-            onSubmitted: (_) => Navigator.pop(context),
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-            ),
-          ),
-        );
-      },
-    );
-    if (Directory(pathWillJump).existsSync()) {
-      _controller.openDirectory(pathWillJump);
+  void _jumpToPath() async {
+    final pathWillJump = ValueNotifier(_controller.currentNode.path);
+    await _showValueInputDialog('跳转到', updataValue: pathWillJump);
+    if (Directory(pathWillJump.value).existsSync()) {
+      _controller.openDirectory(pathWillJump.value);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -271,9 +273,11 @@ class _FileBrowserState extends State<FileBrowser> {
       );
     }
     return GestureDetector(
-      onSecondaryTap: () => _showOperationMenu(),
+      onSecondaryTap:
+          _controller.isMultiSelectMode ? null : _showNoEntityOperationMenu,
       onSecondaryTapDown: _storePosition,
-      onLongPress: () => _showOperationMenu(),
+      onLongPress:
+          _controller.isMultiSelectMode ? null : _showNoEntityOperationMenu,
       onTapDown: _storePosition,
       child: Builder(builder: (context) {
         if (_controller.entities.isEmpty) {
@@ -347,15 +351,15 @@ class _FileBrowserState extends State<FileBrowser> {
   Widget _itemBuilder(int index, {required Widget itemView}) {
     final entity = _controller.entities[index];
     return Ink(
-      color: _controller.selectedItems.contains(entity)
+      color: _controller.selectedEntities.contains(entity)
           ? Colors.blueGrey[200]
           : null,
       child: InkWell(
         onTap: () => _controller.onTapItem(entity),
         onTapDown: _storePosition,
-        onLongPress: () => _showOperationMenu(entity),
+        onLongPress: () => _showEntityOperationMenu(entity),
         onSecondaryTapDown: _storePosition,
-        onSecondaryTap: () => _showOperationMenu(entity),
+        onSecondaryTap: () => _showEntityOperationMenu(entity),
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -380,231 +384,273 @@ class _FileBrowserState extends State<FileBrowser> {
     );
   }
 
-  Future<void> _showOperationMenu([FileSystemEntity? entity]) async {
+  List<PopupMenuEntry<EntityOperation>> get _entityOperationMenuItems {
+    if (!_controller.isMultiSelectMode) {
+      return EntityOperation.values.map((operation) {
+        return PopupMenuItem(
+          value: operation,
+          child: Row(
+            children: [
+              operation.icon,
+              const SizedBox(width: 8),
+              operation.label
+            ],
+          ),
+        );
+      }).toList();
+    }
+    return [
+      // 剪切 复制 粘贴
+      PopupMenuItem(
+        value: EntityOperation.cut,
+        child: Row(
+          children: [
+            EntityOperation.cut.icon,
+            const SizedBox(width: 8),
+            EntityOperation.cut.label
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: EntityOperation.copy,
+        child: Row(
+          children: [
+            EntityOperation.copy.icon,
+            const SizedBox(width: 8),
+            EntityOperation.copy.label
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: EntityOperation.delete,
+        child: Row(
+          children: [
+            EntityOperation.delete.icon,
+            const SizedBox(width: 8),
+            EntityOperation.delete.label
+          ],
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _showEntityOperationMenu(FileSystemEntity entity) async {
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final position = RelativeRect.fromRect(
       _tapPosition & const Size(40, 40),
       Offset.zero & overlay.size,
     );
-    if (entity != null) {
-      if (!_controller.isMultiSelectMode) {
-        _controller.selectedItems.clear();
-        _controller.toggleItemSelect(entity);
-      }
-      final result = await showMenu<EntityOperation>(
-        context: context,
-        position: position,
-        items: EntityOperation.values.map((operation) {
-          return PopupMenuItem(
-            value: operation,
-            child: Row(
-              children: [
-                operation.icon,
-                const SizedBox(width: 8),
-                Text(operation.label),
-              ],
-            ),
-          );
-        }).toList(),
-      );
-      if (result != null && mounted) {
-        await _handleEntityOperation(result, entity, context);
-      }
-    } else {
-      final result = await showMenu<EmptyEntityOperation>(
-        context: context,
-        position: position,
-        items: EmptyEntityOperation.values.map((operation) {
-          return PopupMenuItem(
-            value: operation,
-            child: Row(
-              children: [
-                operation.icon,
-                const SizedBox(width: 8),
-                Text(operation.label),
-              ],
-            ),
-          );
-        }).toList(),
-      );
-      if (result != null && mounted) {
-        await _handleEmptyEntityOperation(result, context);
-      }
+    if (!_controller.isMultiSelectMode) {
+      _controller.selectedEntities.clear();
+      _controller.toggleItemSelect(entity);
+    }
+    final result = await showMenu<EntityOperation>(
+      context: context,
+      position: position,
+      items: _entityOperationMenuItems,
+    );
+    if (result != null && mounted) {
+      await _handleEntityOperation(result, entity);
+    }
+  }
+
+  Future<void> _showNoEntityOperationMenu() async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final position = RelativeRect.fromRect(
+      _tapPosition & const Size(40, 40),
+      Offset.zero & overlay.size,
+    );
+    final result = await showMenu<NoEntityOperation>(
+      context: context,
+      position: position,
+      items: NoEntityOperation.values.map((operation) {
+        return PopupMenuItem(
+          value: operation,
+          child: Row(
+            children: [
+              operation.icon,
+              const SizedBox(width: 8),
+              Text(operation.label),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+    if (result != null && mounted) {
+      await _handleEmptyEntityOperation(result, context);
     }
   }
 
   Future<void> _handleEmptyEntityOperation(
-    EmptyEntityOperation operation,
+    NoEntityOperation operation,
     BuildContext context,
   ) async {
     switch (operation) {
-      case EmptyEntityOperation.create:
-        _create();
+      case NoEntityOperation.create:
+        _createDirectory();
         break;
-      case EmptyEntityOperation.refresh:
-        _controller.loadFilesAndNotify();
+      case NoEntityOperation.refresh:
+        _controller.loadEntitiesAndNotify();
         break;
-      case EmptyEntityOperation.paste:
+      case NoEntityOperation.paste:
         // TODO: 粘贴
         break;
     }
   }
 
-  Future<void> _handleEntityOperation(
-    EntityOperation operation,
-    FileSystemEntity entity,
-    BuildContext context,
-  ) async {
-    switch (operation) {
-      case EntityOperation.open:
-        _controller.openItem(entity);
-        break;
-      case EntityOperation.refresh:
-        _controller.loadFilesAndNotify();
-        break;
-      case EntityOperation.rename:
-        final newName = await showDialog<String>(
-          context: context,
-          builder: (BuildContext context) {
-            String name = entity.name;
-            return AlertDialog(
-              title: const Text('重命名'),
-              content: TextField(
-                autofocus: true,
-                controller: TextEditingController(text: name),
-                onChanged: (value) => name = value,
-                decoration: const InputDecoration(
-                  labelText: '新名称',
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, name),
-                  child: const Text('确定'),
-                ),
-              ],
-            );
-          },
-        );
-        _controller.renameFile(entity, newName).then((message) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-            ),
-          );
-        });
-        break;
-      case EntityOperation.delete:
-        showDialog<bool>(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('确认删除'),
-              content: const Text('确定要删除所选内容吗？'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    _controller.deleteEntitiesToRecycle().then((message) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(message),
-                        ),
-                      );
-                    });
-                    Navigator.pop(context);
-                  },
-                  child: const Text(
-                    '删除',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-        break;
-      case EntityOperation.properties:
-        final properties = _controller.getFileProperties(entity);
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text(entity.name),
-              content: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: properties.entries.map((entry) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text('${entry.key}: ${entry.value}'),
-                    );
-                  }).toList(),
-                ),
-              ),
-            );
-          },
-        );
-        break;
-      case EntityOperation.cut:
-      case EntityOperation.copy:
-      case EntityOperation.paste:
-        // TODO: 实现剪切、复制、粘贴功能
-        break;
-      case EntityOperation.create:
-        _create();
-    }
-  }
-
-  void _create() {
-    showDialog<String>(
+  Future<bool?> _showValueInputDialog(
+    String title, {
+    required ValueNotifier updataValue,
+  }) async {
+    return await showDialog(
       context: context,
       builder: (BuildContext context) {
-        final name = ValueNotifier('');
+        final controller = TextEditingController(text: updataValue.value);
+        controller.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: controller.text.length,
+        );
         return AlertDialog(
-          title: const Text('创建新文件夹'),
+          title: Text(title),
           content: TextField(
             autofocus: true,
-            onChanged: (value) => name.value = value,
-            decoration: const InputDecoration(
-              hintText: '请输入文件夹名称',
-            ),
+            controller: controller,
+            onChanged: (value) => updataValue.value = value,
+            onSubmitted: (_) => Navigator.pop(context),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(context, true),
               child: const Text('取消'),
-            ),
-            ValueListenableBuilder(
-              valueListenable: name,
-              builder: (_, value, __) {
-                return TextButton(
-                  onPressed: value.isEmpty
-                      ? null
-                      : () {
-                          Navigator.pop(context);
-                          _controller.createDirectory(value).then((message) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(message),
-                              ),
-                            );
-                          });
-                        },
-                  child: const Text('确定'),
-                );
-              },
             ),
           ],
         );
       },
     );
+  }
+
+  Future<void> _handleEntityOperation(
+    EntityOperation operation,
+    FileSystemEntity entity,
+  ) async {
+    switch (operation) {
+      case EntityOperation.open:
+        _controller.openEntity(entity);
+        break;
+      case EntityOperation.refresh:
+        _controller.loadEntitiesAndNotify();
+        break;
+      case EntityOperation.rename:
+        _renameEntity(entity);
+        break;
+      case EntityOperation.create:
+        _createDirectory();
+        break;
+      case EntityOperation.delete:
+        _deleteSelectedItems();
+        break;
+      case EntityOperation.property:
+        _showPropertiesDialog(entity);
+        break;
+      case EntityOperation.cut:
+      case EntityOperation.copy:
+      case EntityOperation.paste:
+        // TODO: 剪切 复制 粘贴
+        break;
+    }
+  }
+
+  Future<void> _createDirectory() async {
+    final directoryName = ValueNotifier('新建文件夹');
+    final cancel =
+        await _showValueInputDialog('新建文件夹', updataValue: directoryName);
+    if (directoryName.value.isNotEmpty && cancel != true) {
+      EntityOperator.createDirectory(
+        directoryName.value,
+        path: _controller.currentNode.path,
+      ).then((message) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+          ),
+        );
+        _controller.loadEntitiesAndNotify();
+      });
+    }
+  }
+
+  Future<void> _renameEntity(FileSystemEntity entity) async {
+    final newName = ValueNotifier(entity.name);
+    await _showValueInputDialog('重命名', updataValue: newName);
+    if (newName.value == entity.name || newName.value.isEmpty) return;
+    EntityOperator.rename(entity, newName.value).then((message) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+        ),
+      );
+      _controller.loadEntitiesAndNotify();
+    });
+  }
+
+  void _showConfirmDialog(String content, {required VoidCallback onConfirm}) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('提示'),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: onConfirm,
+              child: const Text('确定', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showPropertiesDialog(FileSystemEntity entity) {
+    final properties = EntityOperator.getFileProperties(entity);
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(entity.name),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: properties.entries.map((entry) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Text('${entry.key}: ${entry.value}'),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _deleteSelectedItems() {
+    _showConfirmDialog('确认删除${_controller.selectedEntities}?', onConfirm: () {
+      EntityOperator.deleteEntities(_controller.selectedEntities)
+          .then((message) {
+        _controller.cancelMultiSelect();
+        _controller.loadEntitiesAndNotify();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+          ),
+        );
+      });
+      Navigator.pop(context);
+    });
   }
 }
