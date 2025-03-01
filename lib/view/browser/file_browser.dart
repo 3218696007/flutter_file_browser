@@ -1,8 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../controller/browser_clipboard.dart';
 import '../../controller/file_browser_controller.dart';
-import '../../service/entity_utils.dart';
+import '../../service/entity_extension.dart';
 import '../../service/entity_operator.dart';
 import 'file_icon.dart';
 
@@ -280,7 +281,7 @@ class _FileBrowserState extends State<FileBrowser> {
           _controller.isMultiSelectMode ? null : _showNoEntityOperationMenu,
       onTapDown: _storePosition,
       child: Builder(builder: (context) {
-        if (_controller.entities.isEmpty) {
+        if (_controller.currentEntities.isEmpty) {
           return Container(
             alignment: Alignment.center,
             color: Theme.of(context).scaffoldBackgroundColor,
@@ -296,9 +297,9 @@ class _FileBrowserState extends State<FileBrowser> {
         if (_controller.isListView) {
           return ListView.builder(
             key: PageStorageKey(_controller.currentNode),
-            itemCount: _controller.entities.length,
+            itemCount: _controller.currentEntities.length,
             itemBuilder: (context, index) {
-              final entity = _controller.entities[index];
+              final entity = _controller.currentEntities[index];
               return _itemBuilder(
                 index,
                 itemView: ListTile(
@@ -321,9 +322,9 @@ class _FileBrowserState extends State<FileBrowser> {
             crossAxisSpacing: 2,
             mainAxisSpacing: 2,
           ),
-          itemCount: _controller.entities.length,
+          itemCount: _controller.currentEntities.length,
           itemBuilder: (context, index) {
-            final entity = _controller.entities[index];
+            final entity = _controller.currentEntities[index];
             return _itemBuilder(
               index,
               itemView: GridTile(
@@ -349,7 +350,7 @@ class _FileBrowserState extends State<FileBrowser> {
   }
 
   Widget _itemBuilder(int index, {required Widget itemView}) {
-    final entity = _controller.entities[index];
+    final entity = _controller.currentEntities[index];
     return Ink(
       color: _controller.selectedEntities.contains(entity)
           ? Colors.blueGrey[200]
@@ -493,7 +494,7 @@ class _FileBrowserState extends State<FileBrowser> {
         _controller.loadEntitiesAndNotify();
         break;
       case NoEntityOperation.paste:
-        // TODO: 粘贴
+        _pasteEntities();
         break;
     }
   }
@@ -553,11 +554,19 @@ class _FileBrowserState extends State<FileBrowser> {
         _showPropertiesDialog(entity);
         break;
       case EntityOperation.cut:
+        _copyToClipboard(fromCut: true);
+        break;
       case EntityOperation.copy:
+        _copyToClipboard();
+        break;
       case EntityOperation.paste:
-        // TODO: 剪切 复制 粘贴
+        _pasteEntities();
         break;
     }
+  }
+
+  void _copyToClipboard({bool fromCut = false}) {
+    BrowserClipboard.copy(_controller.selectedEntities, fromCut: fromCut);
   }
 
   Future<void> _createDirectory() async {
@@ -651,6 +660,21 @@ class _FileBrowserState extends State<FileBrowser> {
         );
       });
       Navigator.pop(context);
+    });
+  }
+
+  Future<void> _pasteEntities() async {
+    if (!BrowserClipboard.canPaste.value) {
+      print('可能剪切板为空');
+      return;
+    }
+    BrowserClipboard.paste(_controller.currentNode.path).then((messages) {
+      _controller.loadEntitiesAndNotify();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$messages')),
+        );
+      }
     });
   }
 }

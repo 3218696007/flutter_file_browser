@@ -3,7 +3,7 @@ import 'package:fc_native_video_thumbnail/fc_native_video_thumbnail.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
-import '../../service/entity_utils.dart';
+import '../../service/entity_extension.dart';
 
 class FileIcon extends StatelessWidget {
   final FileSystemEntity entity;

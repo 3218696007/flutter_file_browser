@@ -7,7 +7,7 @@ import '../model/path_node.dart';
 import '../service/entity_operator.dart';
 
 class FileBrowserController with ChangeNotifier {
-  List<FileSystemEntity> entities = [];
+  List<FileSystemEntity> currentEntities = [];
   final selectedEntities = <FileSystemEntity>[];
   String sortBy = 'name';
   String? _errorMessage;
@@ -77,7 +77,7 @@ class FileBrowserController with ChangeNotifier {
     selectedEntities.clear();
     try {
       final directory = Directory(currentNode.path);
-      entities = _sortEntities(await directory.list().toList());
+      currentEntities = _sortEntities(await directory.list().toList());
       isLoading = false;
       setErrorMessageAndNotify(null);
     } on Exception catch (e) {
@@ -117,7 +117,7 @@ class FileBrowserController with ChangeNotifier {
 
   void changeSortMethod(String method) {
     sortBy = method;
-    entities = _sortEntities(entities);
+    currentEntities = _sortEntities(currentEntities);
     notifyListeners();
   }
 
@@ -178,7 +178,7 @@ class FileBrowserController with ChangeNotifier {
       int i = min(indexStartedSelected!, index);
       final end = max(indexStartedSelected!, index);
       while (i <= end) {
-        toggleItemSelect(entities[i]);
+        toggleItemSelect(currentEntities[i]);
         i++;
       }
       indexStartedSelected = null;
@@ -202,7 +202,7 @@ class FileBrowserController with ChangeNotifier {
     } else {
       const doubleTapDelay = Duration(milliseconds: 300);
       final now = DateTime.now();
-      final index = entities.indexOf(entity);
+      final index = currentEntities.indexOf(entity);
       if (now.difference(_lastTapTime) < doubleTapDelay &&
           index == _lastTapIndex) {
         openEntity(entity);

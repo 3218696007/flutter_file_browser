@@ -131,6 +131,65 @@ class EntityOperator {
     }
   }
 
+  static Future<String> pasteEntities(
+    List<FileSystemEntity> entities, {
+    required String path,
+  }) async {
+    try {
+      for (final entity in entities) {
+        final name = entity.path.split(Platform.pathSeparator).last;
+        final destPath = '$path${Platform.pathSeparator}$name';
+
+        if (entity is File) {
+          await _copyFile(entity, destPath);
+        } else if (entity is Directory) {
+          await _copyDirectory(entity, destPath);
+        }
+      }
+      return '粘贴成功';
+    } catch (e) {
+      return '粘贴失败: $e';
+    }
+  }
+
+  static Future<void> _copyFile(File source, String destPath) async {
+    String finalPath = destPath;
+    int count = 1;
+
+    while (await File(finalPath).exists()) {
+      final extension = path.extension(destPath);
+      final nameWithoutExtension = path.basenameWithoutExtension(destPath);
+      finalPath =
+          '${Directory(destPath).parent.path}${Platform.pathSeparator}$nameWithoutExtension ($count)$extension';
+      count++;
+    }
+
+    await source.copy(finalPath);
+  }
+
+  static Future<void> _copyDirectory(Directory source, String destPath) async {
+    String finalPath = destPath;
+    int count = 1;
+
+    while (await Directory(finalPath).exists()) {
+      finalPath = '$destPath ($count)';
+      count++;
+    }
+
+    final newDir = await Directory(finalPath).create();
+
+    await for (final entity in source.list(recursive: false)) {
+      final name = entity.path.split(Platform.pathSeparator).last;
+      final newPath = '${newDir.path}${Platform.pathSeparator}$name';
+
+      if (entity is File) {
+        await _copyFile(entity, newPath);
+      } else if (entity is Directory) {
+        await _copyDirectory(entity, newPath);
+      }
+    }
+  }
+
   static Map<String, dynamic> getFileProperties(FileSystemEntity entity) {
     try {
       final stat = entity.statSync();
