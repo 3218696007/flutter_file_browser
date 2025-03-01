@@ -298,6 +298,7 @@ class _FileBrowserState extends State<FileBrowser> {
           return ListView.builder(
             key: PageStorageKey(_controller.currentNode),
             itemCount: _controller.currentEntities.length,
+            itemExtent: 0.4 * _itemSize,
             itemBuilder: (context, index) {
               final entity = _controller.currentEntities[index];
               return _itemBuilder(
@@ -305,7 +306,11 @@ class _FileBrowserState extends State<FileBrowser> {
                 itemView: ListTile(
                   minTileHeight: 0.4 * _itemSize,
                   leading: FileIcon(entity: entity, size: 0.3 * _itemSize),
-                  title: Text(entity.name),
+                  title: Text(
+                    entity.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               );
             },
@@ -317,8 +322,6 @@ class _FileBrowserState extends State<FileBrowser> {
           padding: const EdgeInsets.all(8),
           gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: _itemSize,
-            mainAxisExtent: _itemSize,
-            childAspectRatio: 1,
             crossAxisSpacing: 2,
             mainAxisSpacing: 2,
           ),
@@ -665,7 +668,6 @@ class _FileBrowserState extends State<FileBrowser> {
 
   Future<void> _pasteEntities() async {
     if (!BrowserClipboard.canPaste.value) {
-      print('可能剪切板为空');
       return;
     }
     BrowserClipboard.paste(_controller.currentNode.path).then((messages) {

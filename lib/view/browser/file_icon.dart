@@ -37,23 +37,27 @@ class FileIcon extends StatelessWidget {
     }
     return switch (entity.type) {
       EntityType.audio => Icon(Icons.audiotrack, size: size, color: fileColor),
-      EntityType.image => Image.file(
-          entity as File,
-          width: size,
-          height: size,
-          errorBuilder: (_, __, ___) {
-            return Icon(Icons.image, size: size, color: fileColor);
-          },
+      EntityType.image => LazyBuilder(
+          child: Image.file(
+            entity as File,
+            width: size,
+            height: size,
+            cacheWidth: size.toInt(),
+            filterQuality: FilterQuality.none,
+            errorBuilder: (_, __, ___) => Icon(Icons.image, size: size),
+          ),
         ),
-      EntityType.video => FutureBuilder(
-          future: _getVideoThumbnail(entity.path, size),
-          builder: (context, snapshot) {
-            return snapshot.connectionState != ConnectionState.done
-                ? const CircularProgressIndicator()
-                : snapshot.hasData
-                    ? snapshot.data
-                    : Icon(Icons.question_mark, size: size, color: fileColor);
-          },
+      EntityType.video => LazyBuilder(
+          child: FutureBuilder(
+            future: _getVideoThumbnail(entity.path, size),
+            builder: (context, snapshot) {
+              return snapshot.connectionState != ConnectionState.done
+                  ? const CircularProgressIndicator()
+                  : snapshot.hasData
+                      ? snapshot.data
+                      : Icon(Icons.question_mark, size: size, color: fileColor);
+            },
+          ),
         ),
       EntityType.word => MyFileIcon(text: 'W', size: size, color: Colors.blue),
       EntityType.excel => MyFileIcon(text: 'E', size: size, color: Colors.teal),
@@ -86,6 +90,29 @@ class FileIcon extends StatelessWidget {
       return Image.file(File(destFilePath), width: size, height: size);
     }
     debugPrint('${entity.path}缩略图获取失败');
+  }
+}
+
+class LazyBuilder extends StatelessWidget {
+  const LazyBuilder({
+    super.key,
+    this.duration = const Duration(milliseconds: 500),
+    required this.child,
+  });
+
+  final Duration duration;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final show = ValueNotifier(false);
+    Future.delayed(duration, () => show.value = true);
+    return ValueListenableBuilder(
+      valueListenable: show,
+      builder: (_, value, __) =>
+          value ? child : const CircularProgressIndicator(),
+    );
   }
 }
 
